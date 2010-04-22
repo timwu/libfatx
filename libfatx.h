@@ -3,15 +3,17 @@
  * \author Tim Wu
  */
 
+#include <sys/stat.h>
+
 #ifndef FATX_LIBFATX_H
 #define FATX_LIBFATX_H
-
-#include "dirent.h"
 
 /**
  * A fatx opaque object.
  */
-typedef fatx_handle *fatx_t;
+typedef struct fatx_handle * fatx_t;
+
+#include "dirent.h"
 
 /**
  * Initializes a fatx opaque object with the path to
@@ -53,4 +55,41 @@ int fatx_read(fatx_t fatx, const char* path, char* buf, off_t offset, size_t siz
  */
 int fatx_write(fatx_t fatx, const char* path, const char* buf, off_t offset, size_t size);
 
+/**
+ * Stat a file.
+ *
+ * \param fatx The fatx object.
+ * \param path The path to the file to stat.
+ * \param st_buf Pointer to the stat struct to populate.
+ * \return Error code
+ */
+int fatx_stat(fatx_t fatx, const char* path, struct stat *st_buf);
+
+/**
+ * Remove a file
+ *
+ * \param fatx The fatx object.
+ * \param path The path to the file to remove.
+ * \return Error code
+ */
+int fatx_remove(fatx_t fatx, const char* path);
+
+/**
+ * Create a file
+ *
+ * \param fatx The fatx objects.
+ * \param path Path to the file to create.
+ * \return Error code
+ */
+int fatx_mkfile(fatx_t fatx, const char* path);
+
+/**
+ * Create a directory
+ *
+ * \param fatx The fatx object.
+ * \param path Path to the directory to create.
+ * \return Error code
+ */
+int fatx_mkdir(fatx_t fatx, const char* path);
+ 
 #endif //FATX_LIBFATX_H

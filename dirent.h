@@ -11,16 +11,16 @@
 /**
  * Directory entry returned when iterating over folder.
  */
-struct fatx_dirent {
-  char d_name[]; /**< direntry name */
+typedef struct fatx_dirent {
+  char * d_name; /**< direntry name */
   unsigned short int d_namelen; /**< length of the name */
-};
+} * fatx_dirent_t;
 
 /**
  * Fatx dir opaque object used to iterate over
  * the contents of a directory.
  */
-typedef fatx_dir_iter *fatx_dir_iter_t;
+typedef struct fatx_dir_iter * fatx_dir_iter_t;
 
 /**
  * Opens a directory for reading. The resultant
@@ -40,7 +40,7 @@ fatx_dir_iter_t fatx_opendir(fatx_t fatx, const char* path);
  * \param iter The iterator to get the directory entries from.
  * \return A directory entry; NULL if none left.
  */
-fatx_dirent* fatx_readdir(fatx_dir_iter_t iter); 
+fatx_dirent_t fatx_readdir(fatx_dir_iter_t iter); 
 
 /**
  * Closes the iterator and frees up any associated structures.
