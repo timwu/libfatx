@@ -1,14 +1,18 @@
-CFLAGS=-c -Wall
+CFLAGS=-Wall
 LDFLAGS=
-SRCS=libfatx.c
+LDLIBS=
+SRCS=libfatx.c libfatxutils.c
 OBJS=${SRCS:.c=.o}
-OUTPUT=libfatx.so
+OUTPUT=libfatx.o
+TEST_EXECUTABLE=libfattest
+TEST_OBJECT=libfattest.o
 
-all: ${OBJS}
-	gcc -shared ${LDFLAGS} -o ${OUTPUT} ${OBJS}
+.SUFFIXES: .c .o
 
-.c.o:
-	gcc ${CFLAGS} $<
+test: ${TEST_EXECUTABLE}
+	./${TEST_EXECUTABLE} /Volumes/DATA2/fatx_data
+
+${TEST_EXECUTABLE}: ${OBJS} ${TEST_OBJECT}
 
 clean:
 	rm ${OBJS}

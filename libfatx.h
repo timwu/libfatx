@@ -32,6 +32,13 @@ fatx_t fatx_init(const char* path);
 void fatx_free(fatx_t fatx);
 
 /**
+ * Print stats about a fatx_t object.
+ *
+ * \param fatx The fatx object to print info from.
+ */
+ void fatx_printInfo(fatx_t fatx);
+
+/**
  * Read bytes from a file.
  *
  * \param fatx The fatx object
