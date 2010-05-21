@@ -18,8 +18,6 @@ enum FAT_TYPE {
    FATX32  
 };
 
-/** Beginning offset of the FAT table */
-#define FAT_OFFSET 0x1000L
 /** Minimum number of clusters for a partition to be FATX32 (~1GB in size) */
 #define FATX32_MIN_CLUSTERS 65525L
 
@@ -32,10 +30,8 @@ struct fatx_handle {
    uint64_t        nClusters; 
    /** FAT type, either fat16 or fat32 */
    enum FAT_TYPE   fatType; 
-   /** Pointer to the fat table in memory. */
-   void *          fat; 
-	/** Size of the FAT */
-	off_t				 fatSize;
+	/** Offset to the start of the data. */
+	off_t				 dataStart;
 };
 
 fatx_t
@@ -48,15 +44,10 @@ fatx_init(const char * path)
 		goto error;
    fatx->nClusters = fatx_calcClusters(fatx->dev);
 	fatx->fatType = fatx->nClusters < FATX32_MIN_CLUSTERS ? FATX16 : FATX32;
-	fatx->fatSize = fatx_calcFatSize(fatx->fatType, fatx->nClusters);
-	if((fatx->fat = mmap(NULL, fatx->fatSize, PROT_READ, MAP_PRIVATE, fatx->dev, FAT_OFFSET)) == MAP_FAILED) {
-		printf("Failed to map FAT. errno %d\n", errno);
-		goto error; 
-	}
+	fatx->dataStart = fatx_calcDataStart(fatx->fatType, fatx->nClusters);
    return (fatx_t) fatx;
 
 error:
-	if (fatx->fat) munmap(fatx->fat, fatx->fatSize);
 	pthread_mutex_destroy(&fatx->devLock);
 	if (fatx->dev) close(fatx->dev);
 	free(fatx);
@@ -68,7 +59,6 @@ fatx_free(fatx_t fatx)
 {
 	if (fatx == NULL)
 		return;
-	munmap(fatx->fat, fatx->nClusters << fatx->fatType);
 	pthread_mutex_destroy(&fatx->devLock);
 	close(fatx->dev);
 	free(fatx);
@@ -82,8 +72,7 @@ fatx_printInfo(fatx_t fatx)
 	printf("\tdev fd = %d\n", fatx_h->dev);
 	printf("\tnClusters = %lu\n", fatx_h->nClusters);
 	printf("\tfatType = %d\n", fatx_h->fatType);
-	printf("\tfat = 0x%x\n", fatx_h->fat);
-	printf("\tfatSize = %lx\n", fatx_h->fatSize);
+	printf("\tdataStart = 0x%lx\n", fatx_h->dataStart);
 }
 
 int

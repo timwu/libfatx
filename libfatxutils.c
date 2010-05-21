@@ -8,25 +8,35 @@
 #include <sys/disk.h>
 #include <errno.h>
 
+/** Start of the FAT table */
+#define FAT_OFFSET 0x1000L
+
+/** Size of a FAT cluster */
+#define FAT_CLUSTER_SZ 0x4000L
+
 uint64_t
 fatx_calcClusters(int dev)
 {
 	struct stat statBuf;
 	uint64_t totalClusters = 0;
 	off_t blockCount = 0;
+	size_t blockSize = 0;
 	if (fstat(dev, &statBuf)) {
 		printf("failed to stat. errno %d\n", errno);
 		return 0;
 	}
+	blockSize = statBuf.st_blksize;
 	if(S_ISREG(statBuf.st_mode)) {
 		totalClusters = statBuf.st_size >> 14;
 	} else if(S_ISBLK(statBuf.st_mode)) {
 #if (__APPLE__)
 		ioctl(dev, DKIOCGETBLOCKCOUNT, &blockCount);
+		ioctl(dev, DKIOCGETBLOCKSIZE, &blockSize);
 #else 
 		ioctl(dev, BLKGETSIZE, &blockCount);
+		ioctl(dev, BLKBSZGET, &blockSize);
 #endif
-		totalClusters = blockCount >> 3;
+		totalClusters = blockCount / (FAT_CLUSTER_SZ / blockSize);
 	} else {
 		totalClusters = 0;
 	}
@@ -34,10 +44,10 @@ fatx_calcClusters(int dev)
 }
  
 off_t
-fatx_calcFatSize(int entrySize, uint64_t clusters)
+fatx_calcDataStart(int fatType, uint64_t clusters)
 {
-	uint64_t fatSize = clusters << entrySize;
+	size_t fatSize = clusters << fatType;
 	fatSize += fatSize & 0xFFFL ? 4096 : 0;
 	fatSize = fatSize & (~0xFFFL);
-	return fatSize;	
+	return FAT_OFFSET + fatSize;	
 }
