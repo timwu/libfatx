@@ -7,12 +7,8 @@
 #include <sys/stat.h>
 #include <sys/disk.h>
 #include <errno.h>
+#include "libfatx_internal.h"
 
-/** Start of the FAT table */
-#define FAT_OFFSET 0x1000L
-
-/** Size of a FAT cluster */
-#define FAT_CLUSTER_SZ 0x4000L
 
 uint64_t
 fatx_calcClusters(int dev)

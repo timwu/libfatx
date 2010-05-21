@@ -5,34 +5,10 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
-
-#include "libfatx.h"
-#include "libfatxutils.h"
 #include <errno.h>
 
-/** Types of FATX's */
-enum FAT_TYPE {
-	/** FATX 16, entries are 16 bits */
-   FATX16 = 1,
-	/** FATX32, entries are 32 bits */
-   FATX32  
-};
-
-/** Minimum number of clusters for a partition to be FATX32 (~1GB in size) */
-#define FATX32_MIN_CLUSTERS 65525L
-
-struct fatx_handle {
-   /** File descriptor of the device */
-   int             dev; 
-   /** Lock to synchronize access to the device */
-   pthread_mutex_t devLock; 
-   /** Number of clusters in the partition */
-   uint64_t        nClusters; 
-   /** FAT type, either fat16 or fat32 */
-   enum FAT_TYPE   fatType; 
-	/** Offset to the start of the data. */
-	off_t				 dataStart;
-};
+#include "libfatx.h"
+#include "libfatx_internal.h"
 
 fatx_t
 fatx_init(const char * path)
