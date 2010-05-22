@@ -47,3 +47,13 @@ fatx_calcDataStart(int fatType, uint64_t clusters)
 	fatSize = fatSize & (~0xFFFL);
 	return FAT_OFFSET + fatSize;	
 }
+
+uint32_t
+fatx_readFatEntry(fatx_handle * fatx_h, off_t entryNo)
+{
+	if (fatx_h->fatType == FATX32) {
+		return 0;
+	} else {
+		return 0;
+	}
+}

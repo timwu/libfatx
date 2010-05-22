@@ -25,7 +25,7 @@ enum FAT_TYPE {
 /** Size of a FAT cluster */
 #define FAT_CLUSTER_SZ 0x4000L
 
-struct fatx_handle {
+typedef struct fatx_handle {
    /** File descriptor of the device */
    int             dev; 
    /** Lock to synchronize access to the device */
@@ -36,7 +36,7 @@ struct fatx_handle {
    enum FAT_TYPE   fatType; 
 	/** Offset to the start of the data. */
 	off_t				 dataStart;
-};
+} fatx_handle;
 
 /**
  * Calculate the number of clusters in a fatx device.
@@ -53,6 +53,15 @@ uint64_t fatx_calcClusters(int dev);
  * \param clusters number of clusters.
  * \return the starting offset of the first data cluster
  */
-off_t fatx_calcFatSize(int fatType, uint64_t clusters);
+off_t fatx_calcDataStart(int fatType, uint64_t clusters);
+
+/**
+ * Retrieve a FAT entry
+ *
+ * \param fatx_h the fatx object.
+ * \param entryNo the entry to retrieve.
+ * \return fatx entry
+ */
+uint32_t fatx_readFatEntry(fatx_handle * fatx_h, off_t entryNo);
 
 #endif // __LIBFATX_INTERNAL_H__

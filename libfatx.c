@@ -13,7 +13,7 @@
 fatx_t
 fatx_init(const char * path)
 {  
-   struct fatx_handle * fatx = (struct fatx_handle *) malloc(sizeof(struct fatx_handle));
+   fatx_handle * fatx = (fatx_handle *) malloc(sizeof(fatx_handle));
    if((fatx->dev = open(path, O_RDONLY)) <= 0)
 		goto error;
    if(pthread_mutex_init(&fatx->devLock, NULL)) 
@@ -43,7 +43,7 @@ fatx_free(fatx_t fatx)
 void
 fatx_printInfo(fatx_t fatx)
 {
-	struct fatx_handle * fatx_h = (struct fatx_handle *) fatx;
+	fatx_handle * fatx_h = (fatx_handle *) fatx;
 	printf("Fatx handle:\n");
 	printf("\tdev fd = %d\n", fatx_h->dev);
 	printf("\tnClusters = %lu\n", fatx_h->nClusters);
