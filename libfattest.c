@@ -4,7 +4,7 @@
 
 void test_splitPath(void)
 {
-	fatx_filename_list * list = fatx_splitPath("/hello/");
+	fatx_filename_list * list = fatx_splitPath("/Content");
 	printf("path split test: \n");
 	for(;list != NULL; list = list->next) {
 		printf("\tentry = %s\n", list->filename);
@@ -34,7 +34,7 @@ void test_listRootDir(const char * path)
 {
 	fatx_t fatx;
 	fatx = fatx_init(path);
-	fatx_dir_iter_t iter = fatx_opendir(fatx, "/");
+	fatx_dir_iter_t iter = fatx_opendir(fatx, "/Content");
 	fatx_dirent_t * dirent;
 	printf("Testing listing a directory...\n");
 	while( (dirent = fatx_readdir(iter))) {

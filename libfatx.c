@@ -27,7 +27,6 @@ fatx_init(const char * path)
 	fatx->fatType = fatx->nClusters < FATX32_MIN_CLUSTERS ? FATX16 : FATX32;
 	fatx->dataStart = fatx_calcDataStart(fatx->fatType, fatx->nClusters);
 	// Load up the 0'th pages to intialize the caches
-	fatx_loadCluster(fatx, 0);
 	fatx_loadFatPage(fatx, 0);
    return (fatx_t) fatx;
 
@@ -114,15 +113,20 @@ fatx_dir_iter_t
 fatx_opendir(fatx_t      fatx, 
 				 const char* path)
 {
-	fatx_dir_iter *      dirIter = NULL;
-	fatx_dir_iter *      rootDirIter = NULL;
-	fatx_filename_list * fnList = NULL;
+	fatx_dir_iter *        dirIter = NULL;
+	fatx_directory_entry * directoryEntry = NULL;
+	fatx_filename_list *   fnList = NULL;
 	FATX_LOCK(fatx);
-	rootDirIter = (fatx_dir_iter *) calloc(1, sizeof(fatx_dir_iter));
-	rootDirIter->fatx_h = fatx;
 	fnList = fatx_splitPath(path);
-	dirIter = fatx_createDirIter(fatx, fnList, rootDirIter);
+	if(fnList == NULL) {
+		dirIter = fatx_createDirIter(fatx, NULL);
+		goto finish;
+	}
+	directoryEntry = fatx_findDirectoryEntry(fatx, fnList, directoryEntry);
+	if (directoryEntry == NULL) goto finish;
+	dirIter = fatx_createDirIter(fatx, directoryEntry);
 	fatx_freeFilenameList(fnList);
+finish:
 	FATX_UNLOCK(fatx);
 	return (fatx_dir_iter_t) dirIter;
 }
@@ -132,34 +136,25 @@ fatx_readdir(fatx_dir_iter_t iter)
 {
 	fatx_cache_entry * 	  cacheEntry;
 	fatx_dirent_t *        dirent = NULL;
-	fatx_directory_entry * entryList = NULL;
+	fatx_directory_entry * directoryEntry = NULL;
 	fatx_dirent_list *     direntList = NULL;
 	uint8_t 					  filenameSize;
+	if (iter == NULL) return NULL;
 	FATX_LOCK(iter->fatx_h);
-	if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER) {
-		iter->entryNo = 0;
-		iter->clusterNo = fatx_readFatEntry(iter->fatx_h, iter->clusterNo);
-	}
-	if(fatx_isEOC(iter->fatx_h, iter->clusterNo)) goto finish;
-	cacheEntry = fatx_getCluster(iter->fatx_h, iter->clusterNo);
-	entryList = (fatx_directory_entry *) cacheEntry->data;
-	if(entryList[iter->entryNo].filenameSz == 0xFF) goto finish;
-	else if(entryList[iter->entryNo].filenameSz > 42) {
-		iter->entryNo++;
+	directoryEntry = fatx_readDirectoryEntry(iter->fatx_h, iter);
+	if(directoryEntry == NULL) goto finish;
+	if(!IS_VALID_ENTRY(directoryEntry)) {
 		dirent = fatx_readdir(iter);
-	} else {
-		filenameSize = entryList[iter->entryNo].filenameSz;
-		dirent = (fatx_dirent_t *) malloc(sizeof(fatx_dirent_t));
-		dirent->d_namelen = filenameSize;
-		dirent->d_name = (char *) malloc(filenameSize + 1);
-		strncpy(dirent->d_name, entryList[iter->entryNo].filename, filenameSize);
-		dirent->d_name[filenameSize] = '\0';
-		direntList = (fatx_dirent_list *) malloc(sizeof(fatx_dirent_list));
-		direntList->dirEnt = dirent;
-		direntList->next = iter->dirEntList;
-		iter->dirEntList = direntList;
-		iter->entryNo++;
+		goto finish;
 	}
+	dirent = (fatx_dirent_t *) malloc(sizeof(fatx_dirent_t));
+	dirent->d_namelen = directoryEntry->filenameSz;
+	dirent->d_name = (char *) malloc(dirent->d_namelen + 1);
+	strncpy(dirent->d_name, directoryEntry->filename, dirent->d_namelen);
+	dirent->d_name[dirent->d_namelen] = '\0';
+	direntList = (fatx_dirent_list *) malloc(sizeof(fatx_dirent_list));
+	direntList->dirEnt = dirent;
+	direntList->next = iter->dirEntList;
 finish:
 	FATX_UNLOCK(iter->fatx_h);
 	return dirent;
@@ -170,6 +165,7 @@ fatx_closedir(fatx_dir_iter_t iter)
 {
 	fatx_dir_iter * dirIter = (fatx_dir_iter *) iter;
 	fatx_dirent_list* nextDirEntList;
+	if(iter == NULL) return;
 	for(;iter->dirEntList != NULL; iter->dirEntList = nextDirEntList) {
 		nextDirEntList = iter->dirEntList->next;
 		free(iter->dirEntList->dirEnt->d_name);

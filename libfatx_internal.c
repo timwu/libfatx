@@ -47,7 +47,7 @@ fatx_calcDataStart(int fatType, uint32_t clusters)
 	size_t fatSize = clusters << fatType;
 	fatSize += fatSize & (FAT_PAGE_SZ - 1) ? FAT_PAGE_SZ : 0;
 	fatSize = fatSize & (~(FAT_PAGE_SZ - 1));
-	return FAT_OFFSET + fatSize;	
+	return FAT_OFFSET + fatSize - FAT_CLUSTER_SZ;	
 }
 
 uint32_t
@@ -165,7 +165,7 @@ fatx_splitPath(const char * path)
 		return NULL;
 	} else {
 		list = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
-		filename = &list->filename;
+		filename = list->filename;
 		// Skip leading /'s
 		while(*path == '/') path++;
 		while(*path != '/' && *path != '\0') {
@@ -180,14 +180,73 @@ fatx_splitPath(const char * path)
 }
 
 fatx_dir_iter *
-fatx_createDirIter(fatx_handle *        fatx_h,
-						 fatx_filename_list * fnList,
-						 fatx_dir_iter *      baseDir)
+fatx_createDirIter(fatx_handle *          fatx_h,
+						 fatx_directory_entry * directoryEntry)
 {
-	fatx_dir_iter * iter = baseDir;
+	fatx_dir_iter        * iter = NULL;
+	uint32_t               clusterNo = 1;
 	FATX_LOCK(fatx_h);
-	if(fnList = NULL) goto finish;
+	if (directoryEntry != NULL) {
+		if(!IS_VALID_ENTRY(directoryEntry) || !IS_FOLDER(directoryEntry))
+			goto finish;
+		clusterNo = SWAP32(directoryEntry->firstCluster);
+	} 
+	iter = (fatx_dir_iter *) malloc(sizeof(fatx_dir_iter));
+	iter->fatx_h = fatx_h;
+	iter->entryNo = 0;
+	iter->clusterNo = clusterNo;
+	iter->dirEntList = NULL;
 finish:
 	FATX_UNLOCK(fatx_h);
 	return iter;
+}
+
+fatx_directory_entry *
+fatx_readDirectoryEntry(fatx_handle *   fatx_h,
+								fatx_dir_iter * iter)
+{
+	fatx_directory_entry   * directoryEntry = NULL;
+	fatx_cache_entry       * cacheEntry;
+	FATX_LOCK(iter->fatx_h);
+	if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER) {
+		iter->entryNo = 0;
+		iter->clusterNo = fatx_readFatEntry(iter->fatx_h, iter->clusterNo);
+	}
+	if(fatx_isEOC(iter->fatx_h, iter->clusterNo)) goto finish;
+	cacheEntry = fatx_getCluster(iter->fatx_h, iter->clusterNo);
+	directoryEntry = &((fatx_directory_entry *) cacheEntry->data)[iter->entryNo];
+	if(directoryEntry->filenameSz == 0xFF) {
+		directoryEntry = NULL;
+		goto finish;
+	}
+	iter->entryNo++;
+finish:
+	FATX_UNLOCK(iter->fatx_h);
+	return directoryEntry;
+}
+
+fatx_directory_entry *
+fatx_findDirectoryEntry(fatx_handle *          fatx_h,
+								fatx_filename_list *   fnList,
+								fatx_directory_entry * baseDirectoryEntry)
+{
+	fatx_dir_iter *        iter;
+	fatx_directory_entry * directoryEntry = NULL;
+	FATX_LOCK(fatx_h);
+	if (fnList == NULL) {
+		directoryEntry = baseDirectoryEntry;
+		goto finish;
+	}
+	iter = fatx_createDirIter(fatx_h, baseDirectoryEntry);
+	while( (directoryEntry = fatx_readDirectoryEntry(fatx_h, iter)) ) {
+		if(!IS_VALID_ENTRY(directoryEntry)) continue;
+		if(!strncmp(directoryEntry->filename, fnList->filename, directoryEntry->filenameSz)) {
+			directoryEntry = fatx_findDirectoryEntry(fatx_h, fnList->next, directoryEntry);
+			break;
+		}
+	}
+	fatx_closedir(iter);
+finish:
+	FATX_UNLOCK(fatx_h);
+	return directoryEntry;
 }

@@ -157,6 +157,15 @@ typedef struct fatx_directory_entry {
 	uint16_t					accessDate;
 } fatx_directory_entry;
 
+/** Check if a directory entry is a folder */
+#define IS_FOLDER(x) ( (x)->attributes & 0x10 )
+
+/** Check if a directory entry is hidden */
+#define IS_HIDDEN(x) ( (x)->attributes & 0x2 )
+
+/** Is a valid (non-deleted) directory entry. */
+#define IS_VALID_ENTRY(x) ( (x)->filenameSz <= 42 )
+
 /**
  * Calculate the number of clusters in a fatx device.
  *
@@ -251,10 +260,31 @@ fatx_filename_list * fatx_splitPath(const char * path);
  * Create a dir iterator.
  *
  * \param fatx_h the fatx object.
- * \param fnList path segment list.
- * \param baseDir the dir iterator of the directory to start looking from.
+ * \param directoryEntry base directory entry, NULL for the root folder.
  * \return the dir iterator.
  */
-fatx_dir_iter * fatx_createDirIter(fatx_handle * fatx_h, 
-											  fatx_filename_list * fnList, fatx_dir_iter * baseDir);
+fatx_dir_iter * fatx_createDirIter(fatx_handle *          fatx_h, 
+											  fatx_directory_entry * directoryEntry);
+
+/**
+ * Read a directory entry from an iterator
+ *
+ * \param fatx_h the fatx object.
+ * \param iter the iterator.
+ * \return directory entry; NULL if no entries left.
+ */
+fatx_directory_entry * fatx_readDirectoryEntry(fatx_handle * fatx_h,
+															  fatx_dir_iter * iter);
+
+/**
+ * Find a directory entry
+ *
+ * \param fatx_h the fatx object.
+ * \param fnList the split path to the directory entry.
+ * \param baseDirectoryEntry the base directory entr to start the search in; NULL for the root directory.
+ * \return the requested directory entry or NULL if not found.
+ */
+fatx_directory_entry * fatx_findDirectoryEntry(fatx_handle *          fatx_h,
+															  fatx_filename_list *   fnList,
+															  fatx_directory_entry * baseDirectoryEntry);
 #endif // __LIBFATX_INTERNAL_H__
