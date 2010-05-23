@@ -143,18 +143,18 @@ typedef struct fatx_directory_entry {
 	uint32_t					firstCluster;
 	/** File size */
 	uint32_t					fileSize;
-	/** Modification time */
-	uint16_t					modificationTime;
 	/** Modification date */
 	uint16_t					modificationDate;
-	/** Creation time */
-	uint16_t					creationTime;
+	/** Modification time */
+	uint16_t					modificationTime;
 	/** Creation date */
 	uint16_t					creationDate;
-	/** Last access time */
-	uint16_t					accessTime;
+	/** Creation time */
+	uint16_t					creationTime;
 	/** Last access date */
 	uint16_t					accessDate;
+	/** Last access time */
+	uint16_t					accessTime;
 } fatx_directory_entry;
 
 /** Check if a directory entry is a folder */
@@ -287,4 +287,12 @@ fatx_directory_entry * fatx_readDirectoryEntry(fatx_handle * fatx_h,
 fatx_directory_entry * fatx_findDirectoryEntry(fatx_handle *          fatx_h,
 															  fatx_filename_list *   fnList,
 															  fatx_directory_entry * baseDirectoryEntry);
+/**
+ * Make a time_t based on the time and date values from FATX
+ *
+ * \param time FATX time
+ * \param ts pointer to the time spec to set.
+ * \param time in seconds
+ */
+time_t fatx_makeTimeType(uint16_t date, uint16_t time);
 #endif // __LIBFATX_INTERNAL_H__

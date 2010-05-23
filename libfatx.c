@@ -85,6 +85,26 @@ fatx_stat(fatx_t       fatx,
 	       const char*  path, 
 	       struct stat* st_buf)
 {
+	fatx_directory_entry * directoryEntry;
+	fatx_filename_list *   fnList;
+	FATX_LOCK(fatx);
+	fnList = fatx_splitPath(path);
+	if(fnList == NULL) {
+		// Root directory.
+		st_buf->st_mode = S_IFDIR;
+		st_buf->st_nlink = 1;
+	} else {
+		directoryEntry = fatx_findDirectoryEntry(fatx, fnList, NULL);
+		fatx_freeFilenameList(fnList);
+		if(directoryEntry == NULL) return -ENOENT;
+		st_buf->st_mode = IS_FOLDER(directoryEntry) ? S_IFDIR : S_IFREG;
+		st_buf->st_nlink = 1;
+		st_buf->st_size = SWAP32(directoryEntry->fileSize);
+		st_buf->st_mtime = fatx_makeTimeType(SWAP16(directoryEntry->modificationDate), 
+														 SWAP16(directoryEntry->modificationTime));
+		st_buf->st_atime = fatx_makeTimeType(SWAP16(directoryEntry->accessDate), 
+														 SWAP16(directoryEntry->accessTime));
+	}
    return 0;
 }
 
@@ -134,11 +154,9 @@ finish:
 fatx_dirent_t * 
 fatx_readdir(fatx_dir_iter_t iter)
 {
-	fatx_cache_entry * 	  cacheEntry;
 	fatx_dirent_t *        dirent = NULL;
 	fatx_directory_entry * directoryEntry = NULL;
 	fatx_dirent_list *     direntList = NULL;
-	uint8_t 					  filenameSize;
 	if (iter == NULL) return NULL;
 	FATX_LOCK(iter->fatx_h);
 	directoryEntry = fatx_readDirectoryEntry(iter->fatx_h, iter);

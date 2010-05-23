@@ -8,8 +8,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/disk.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
 #include "libfatx_internal.h"
 
 uint32_t
@@ -47,6 +49,8 @@ fatx_calcDataStart(int fatType, uint32_t clusters)
 	size_t fatSize = clusters << fatType;
 	fatSize += fatSize & (FAT_PAGE_SZ - 1) ? FAT_PAGE_SZ : 0;
 	fatSize = fatSize & (~(FAT_PAGE_SZ - 1));
+	// For some reason the first page after the FAT counts as page 1.
+	// So we'll just be skipping it
 	return FAT_OFFSET + fatSize - FAT_CLUSTER_SZ;	
 }
 
@@ -161,7 +165,7 @@ fatx_splitPath(const char * path)
 {
 	fatx_filename_list * list = NULL;
 	char *               filename;
-	if (!strncmp(path, "", 1) || !strncmp(path, "/", 2)) {
+	if (path == NULL || !strncmp(path, "", 1) || !strncmp(path, "/", 2)) {
 		return NULL;
 	} else {
 		list = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
@@ -249,4 +253,20 @@ fatx_findDirectoryEntry(fatx_handle *          fatx_h,
 finish:
 	FATX_UNLOCK(fatx_h);
 	return directoryEntry;
+}
+
+time_t
+fatx_makeTimeType(uint16_t date, uint16_t time)
+{
+	struct tm time_struct =  {
+					                .tm_year = ((date & 0xFE00) >> 9) + 80,
+										 .tm_mon = ((date & 0x01E0) >> 5) - 1,
+										 .tm_mday = date & 0x1F,
+										 .tm_hour = time >> 11,
+										 .tm_min = (time >> 5) & 0x3F,
+										 .tm_sec = (time & 0x1F) << 1,
+										 .tm_isdst = -1,
+										 .tm_wday = 0,
+										 .tm_yday = 0,																																	          };
+	return mktime(&time_struct);
 }
