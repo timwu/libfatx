@@ -7,6 +7,8 @@
 #ifndef __LIBFATX_INTERNAL_H__
 #define __LIBFATX_INTERNAL_H__
 
+#include "libfatx.h"
+
 #include <pthread.h>
 #include <sys/types.h>
 #include <stdint.h>
@@ -26,6 +28,9 @@ enum FAT_TYPE {
 	/** FATX32, entries are 32 bits */
    FATX32  
 };
+
+/** Number of directory entries in a cluster */
+#define DIR_ENTRIES_PER_CLUSTER 64
 
 /** Minimum number of clusters for a partition to be FATX32 (~1GB in size) */
 #define FATX32_MIN_CLUSTERS 65525L
@@ -106,19 +111,51 @@ typedef struct fatx_filename_list {
 	struct fatx_filename_list * next;
 } fatx_filename_list;
 
+/** fatx_dirent_t linked list */
+typedef struct fatx_dirent_list {
+	/** This directory entry. */
+	fatx_dirent_t *           dirEnt;
+	/** Next dirent in the chain */
+	struct fatx_dirent_list * next;
+} fatx_dirent_list;
+
 /** Directory iterator */
 typedef struct fatx_dir_iter {
-	/** Path */
-	char * 				   path;
+	/** Reference to the fatx object this dir iter is associated with */
+	fatx_handle * 			fatx_h;
 	/** Cluster number in the folder */
 	uint32_t				   clusterNo;
 	/** Entry number */
 	uint32_t				   entryNo;
-	/** Next cluster */
-	uint32_t				   nextCluster;
-	/** List of filenames returned */
-	fatx_filename_list * fnList;
+	/** List of dirents given out */
+	fatx_dirent_list *   dirEntList;
 } fatx_dir_iter;
+
+/** FATX directory entry */
+typedef struct fatx_directory_entry {
+	/** Length of the file name */
+	uint8_t					filenameSz;
+	/** FAT Attributes */
+	uint8_t					attributes;
+	/** Filename */
+	char                 filename[42];
+	/** First cluster of the file */
+	uint32_t					firstCluster;
+	/** File size */
+	uint32_t					fileSize;
+	/** Modification time */
+	uint16_t					modificationTime;
+	/** Modification date */
+	uint16_t					modificationDate;
+	/** Creation time */
+	uint16_t					creationTime;
+	/** Creation date */
+	uint16_t					creationDate;
+	/** Last access time */
+	uint16_t					accessTime;
+	/** Last access date */
+	uint16_t					accessDate;
+} fatx_directory_entry;
 
 /**
  * Calculate the number of clusters in a fatx device.
@@ -145,6 +182,14 @@ off_t fatx_calcDataStart(int fatType, uint32_t clusters);
  * \return fatx entry
  */
 uint32_t fatx_readFatEntry(fatx_handle * fatx_h, uint32_t entryNo);
+
+/**
+ * Is cluster then end of chain
+ *
+ * \param fatx_h the fatx object.
+ * \param clusterNo number of the cluster.
+ */
+char fatx_isEOC(fatx_handle * fatx_h, uint32_t clusterNo);
 
 /**
  * Load up a FAT page
@@ -207,9 +252,9 @@ fatx_filename_list * fatx_splitPath(const char * path);
  *
  * \param fatx_h the fatx object.
  * \param fnList path segment list.
- * \param clusterNo the cluster number of the starting directory.
+ * \param baseDir the dir iterator of the directory to start looking from.
  * \return the dir iterator.
  */
 fatx_dir_iter * fatx_createDirIter(fatx_handle * fatx_h, 
-											  fatx_filename_list * fnList, uint32_t clusterNo);
+											  fatx_filename_list * fnList, fatx_dir_iter * baseDir);
 #endif // __LIBFATX_INTERNAL_H__

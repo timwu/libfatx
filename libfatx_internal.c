@@ -80,6 +80,16 @@ fatx_readFatEntry(fatx_handle * fatx_h,
 	return entry;
 }
 
+char
+fatx_isEOC(fatx_handle * fatx_h,
+			  uint32_t      clusterNo)
+{
+	if(fatx_h->fatType == FATX32) 
+		return (clusterNo >= 0xFFFFFFF8);
+	else 
+		return (clusterNo >= 0xFFF8);
+}
+
 void
 fatx_loadFatPage(fatx_handle * fatx_h,
 					  uint32_t      pageNo)
@@ -150,13 +160,12 @@ fatx_filename_list *
 fatx_splitPath(const char * path)
 {
 	fatx_filename_list * list = NULL;
-	char * filename;
-	list = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
-	list->next = NULL;
-	filename = list->filename;
+	char *               filename;
 	if (!strncmp(path, "", 1) || !strncmp(path, "/", 2)) {
-		*filename = '\0';
+		return NULL;
 	} else {
+		list = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
+		filename = &list->filename;
 		// Skip leading /'s
 		while(*path == '/') path++;
 		while(*path != '/' && *path != '\0') {
@@ -173,7 +182,12 @@ fatx_splitPath(const char * path)
 fatx_dir_iter *
 fatx_createDirIter(fatx_handle *        fatx_h,
 						 fatx_filename_list * fnList,
-						 uint32_t             clusterNo)
+						 fatx_dir_iter *      baseDir)
 {
-	return NULL;
+	fatx_dir_iter * iter = baseDir;
+	FATX_LOCK(fatx_h);
+	if(fnList = NULL) goto finish;
+finish:
+	FATX_UNLOCK(fatx_h);
+	return iter;
 }

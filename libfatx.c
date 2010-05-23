@@ -8,14 +8,13 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "libfatx.h"
 #include "libfatx_internal.h"
+#include "libfatx.h"
 
 fatx_t
 fatx_init(const char * path)
 {  
    fatx_handle * fatx = (fatx_handle *) calloc(1, sizeof(fatx_handle));
-	int i = 0;
    if((fatx->dev = open(path, O_RDONLY)) <= 0)
 		goto error;
 	if(pthread_mutexattr_init(&fatx->mutexAttr))
@@ -43,7 +42,6 @@ error:
 void
 fatx_free(fatx_t fatx)
 {
-	int i;
 	if (fatx == NULL)
 		return;
 	pthread_mutex_destroy(&fatx->devLock);
@@ -116,22 +114,68 @@ fatx_dir_iter_t
 fatx_opendir(fatx_t      fatx, 
 				 const char* path)
 {
-	fatx_dir_iter * dirIter = NULL;
+	fatx_dir_iter *      dirIter = NULL;
+	fatx_dir_iter *      rootDirIter = NULL;
+	fatx_filename_list * fnList = NULL;
+	FATX_LOCK(fatx);
+	rootDirIter = (fatx_dir_iter *) calloc(1, sizeof(fatx_dir_iter));
+	rootDirIter->fatx_h = fatx;
+	fnList = fatx_splitPath(path);
+	dirIter = fatx_createDirIter(fatx, fnList, rootDirIter);
+	fatx_freeFilenameList(fnList);
+	FATX_UNLOCK(fatx);
 	return (fatx_dir_iter_t) dirIter;
 }
 
-fatx_dirent_t 
+fatx_dirent_t * 
 fatx_readdir(fatx_dir_iter_t iter)
 {
-	return NULL;
+	fatx_cache_entry * 	  cacheEntry;
+	fatx_dirent_t *        dirent = NULL;
+	fatx_directory_entry * entryList = NULL;
+	fatx_dirent_list *     direntList = NULL;
+	uint8_t 					  filenameSize;
+	FATX_LOCK(iter->fatx_h);
+	if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER) {
+		iter->entryNo = 0;
+		iter->clusterNo = fatx_readFatEntry(iter->fatx_h, iter->clusterNo);
+	}
+	if(fatx_isEOC(iter->fatx_h, iter->clusterNo)) goto finish;
+	cacheEntry = fatx_getCluster(iter->fatx_h, iter->clusterNo);
+	entryList = (fatx_directory_entry *) cacheEntry->data;
+	if(entryList[iter->entryNo].filenameSz == 0xFF) goto finish;
+	else if(entryList[iter->entryNo].filenameSz > 42) {
+		iter->entryNo++;
+		dirent = fatx_readdir(iter);
+	} else {
+		filenameSize = entryList[iter->entryNo].filenameSz;
+		dirent = (fatx_dirent_t *) malloc(sizeof(fatx_dirent_t));
+		dirent->d_namelen = filenameSize;
+		dirent->d_name = (char *) malloc(filenameSize + 1);
+		strncpy(dirent->d_name, entryList[iter->entryNo].filename, filenameSize);
+		dirent->d_name[filenameSize] = '\0';
+		direntList = (fatx_dirent_list *) malloc(sizeof(fatx_dirent_list));
+		direntList->dirEnt = dirent;
+		direntList->next = iter->dirEntList;
+		iter->dirEntList = direntList;
+		iter->entryNo++;
+	}
+finish:
+	FATX_UNLOCK(iter->fatx_h);
+	return dirent;
 }
 
 void 
 fatx_closedir(fatx_dir_iter_t iter)
 {
 	fatx_dir_iter * dirIter = (fatx_dir_iter *) iter;
-	if(dirIter->path) free(dirIter->path);
-	fatx_freeFilenameList(dirIter->fnList);
+	fatx_dirent_list* nextDirEntList;
+	for(;iter->dirEntList != NULL; iter->dirEntList = nextDirEntList) {
+		nextDirEntList = iter->dirEntList->next;
+		free(iter->dirEntList->dirEnt->d_name);
+		free(iter->dirEntList->dirEnt);
+		free(iter->dirEntList);
+	}
 	free(dirIter);
 }
 

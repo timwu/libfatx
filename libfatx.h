@@ -19,7 +19,7 @@ typedef struct fatx_handle * fatx_t;
 typedef struct fatx_dirent {
   char * d_name; /**< direntry name */
   unsigned short int d_namelen; /**< length of the name */
-} * fatx_dirent_t;
+} fatx_dirent_t;
 
 /**
  * Initializes a fatx opaque object with the path to
@@ -129,7 +129,7 @@ fatx_dir_iter_t fatx_opendir(fatx_t fatx, const char* path);
  * \param iter The iterator to get the directory entries from.
  * \return A directory entry; NULL if none left.
  */
-fatx_dirent_t fatx_readdir(fatx_dir_iter_t iter); 
+fatx_dirent_t * fatx_readdir(fatx_dir_iter_t iter); 
 
 /**
  * Closes the iterator and frees up any associated structures.

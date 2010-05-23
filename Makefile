@@ -5,7 +5,7 @@ SRCS=libfatx.c libfatx_internal.c
 OBJS=${SRCS:.c=.o}
 TEST_EXECUTABLE=libfattest
 TEST_OBJECT=libfattest.o
-TEST_TARGET=/dev/disk4s3
+TEST_TARGET=/Volumes/DATA2/fatx_data
 
 .SUFFIXES: .c .o
 
