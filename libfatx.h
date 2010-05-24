@@ -4,6 +4,8 @@
  */
 
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <stdint.h>
 
 #ifndef FATX_LIBFATX_H
 #define FATX_LIBFATX_H
@@ -21,14 +23,27 @@ typedef struct fatx_dirent {
   unsigned short int d_namelen; /**< length of the name */
 } fatx_dirent_t;
 
+/** Structure to store mount options */
+typedef struct fatx_options {
+	/** User to own the files */
+	uid_t    user;
+	/** Group of the files */
+	gid_t    group;
+	/** File permissions */
+	uint32_t filePerm;
+	/** Mount mode */
+	uint32_t mode;
+} fatx_options_t;
+
 /**
  * Initializes a fatx opaque object with the path to
  * the device to use.
  *
  * \param path Path to the image or device.
+ * \param options options to set.
  * \return The initilized fatx object; NULL on error.
  */
-fatx_t fatx_init(const char* path);
+fatx_t fatx_init(const char* path, fatx_options_t * options);
 
 /**
  * Frees a fatx object.

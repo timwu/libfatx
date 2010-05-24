@@ -13,6 +13,9 @@
 #include <sys/types.h>
 #include <stdint.h>
 
+#define MAX(x,y) ( ((x) > (y)) ? (x) : (y) )
+#define MIN(x,y) ( ((x) < (y)) ? (x) : (y) )
+
 #if (__APPLE__)
 #include <libkern/OSByteOrder.h>
 #define SWAP32(x) OSSwapHostToBigInt32(x)
@@ -30,7 +33,7 @@ enum FAT_TYPE {
 };
 
 /** Number of directory entries in a cluster */
-#define DIR_ENTRIES_PER_CLUSTER 64
+#define DIR_ENTRIES_PER_CLUSTER 256
 
 /** Minimum number of clusters for a partition to be FATX32 (~1GB in size) */
 #define FATX32_MIN_CLUSTERS 65525L
@@ -60,6 +63,32 @@ enum FAT_TYPE {
 #define FATX_LOCK(x) pthread_mutex_lock(&(x)->devLock)
 #define FATX_UNLOCK(x) pthread_mutex_unlock(&(x)->devLock)
 
+/** FATX directory entry */
+typedef struct fatx_directory_entry {
+	/** Length of the file name */
+	uint8_t					filenameSz;
+	/** FAT Attributes */
+	uint8_t					attributes;
+	/** Filename */
+	char                 filename[42];
+	/** First cluster of the file */
+	uint32_t					firstCluster;
+	/** File size */
+	uint32_t					fileSize;
+	/** Modification date */
+	uint16_t					modificationDate;
+	/** Modification time */
+	uint16_t					modificationTime;
+	/** Creation date */
+	uint16_t					creationDate;
+	/** Creation time */
+	uint16_t					creationTime;
+	/** Last access date */
+	uint16_t					accessDate;
+	/** Last access time */
+	uint16_t					accessTime;
+} fatx_directory_entry;
+
 /** FAT page cache */
 typedef struct fatx_fat_cache_entry {
 	/** The FAT page number */
@@ -80,12 +109,18 @@ typedef struct fatx_cache_entry {
 	uint32_t			clusterNo;
 	/** Dirty flag */
 	char				dirty;
-	/** Pointer to the actual data */
-	char 				data[FAT_CLUSTER_SZ];
+	union {
+		/** Field to access the directory entries in the cluster with */
+		fatx_directory_entry dirEntries[DIR_ENTRIES_PER_CLUSTER];
+		/** Pointer to the actual data */
+		char 				      data[FAT_CLUSTER_SZ];
+	};
 } fatx_cache_entry;
 
 /** Internal fatx structure */
 typedef struct fatx_handle {
+	/** Mount options */
+	fatx_options_t       options;
    /** File descriptor of the device */
    int             		dev; 
 	/** Mutex attributes */
@@ -131,32 +166,6 @@ typedef struct fatx_dir_iter {
 	fatx_dirent_list *   dirEntList;
 } fatx_dir_iter;
 
-/** FATX directory entry */
-typedef struct fatx_directory_entry {
-	/** Length of the file name */
-	uint8_t					filenameSz;
-	/** FAT Attributes */
-	uint8_t					attributes;
-	/** Filename */
-	char                 filename[42];
-	/** First cluster of the file */
-	uint32_t					firstCluster;
-	/** File size */
-	uint32_t					fileSize;
-	/** Modification date */
-	uint16_t					modificationDate;
-	/** Modification time */
-	uint16_t					modificationTime;
-	/** Creation date */
-	uint16_t					creationDate;
-	/** Creation time */
-	uint16_t					creationTime;
-	/** Last access date */
-	uint16_t					accessDate;
-	/** Last access time */
-	uint16_t					accessTime;
-} fatx_directory_entry;
-
 /** Check if a directory entry is a folder */
 #define IS_FOLDER(x) ( (x)->attributes & 0x10 )
 
@@ -165,6 +174,9 @@ typedef struct fatx_directory_entry {
 
 /** Is a valid (non-deleted) directory entry. */
 #define IS_VALID_ENTRY(x) ( (x)->filenameSz <= 42 )
+
+/** Check if a cluster is a free cluster */
+#define IS_FREE_CLUSTER(x) ((x) == 0)
 
 /**
  * Calculate the number of clusters in a fatx device.
@@ -295,4 +307,18 @@ fatx_directory_entry * fatx_findDirectoryEntry(fatx_handle *          fatx_h,
  * \param time in seconds
  */
 time_t fatx_makeTimeType(uint16_t date, uint16_t time);
+
+/**
+ * Read from a directory entry
+ *
+ * \param fatx the fatx object.
+ * \param directoryEntry the directory entry of the file to read from.
+ * \param buf buffer to read file data into.
+ * \param offset offset in the file to read from.
+ * \param len number of bytes to read from the file.
+ * \return number of bytes read or a negative error code.
+ */
+int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * directoryEntry,
+										  char * buf, off_t offset, size_t len);
+
 #endif // __LIBFATX_INTERNAL_H__

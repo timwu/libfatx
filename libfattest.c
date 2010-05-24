@@ -1,8 +1,14 @@
 #include <stdio.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 #include "libfatx.h"
 #include "libfatx_internal.h"
+
+fatx_options_t fatx_options = {
+			.filePerm = 0555,
+};
 
 void test_splitPath(void)
 {
@@ -17,7 +23,7 @@ void test_splitPath(void)
 void test_initFree(const char * path)
 {
 	fatx_t fatx;
-	fatx = fatx_init(path);
+	fatx = fatx_init(path, &fatx_options);
 	if (fatx == NULL) {
 		printf("Failed to instatiate fatx.\n");
 		return;
@@ -60,19 +66,40 @@ test_testStat(fatx_t fatx, const char * path)
 	printf("\tmodification time = %s\n", ctime(&st_buf.st_mtime));
 }
 
+void
+test_read(fatx_t fatx, const char * path, const char * outfile)
+{
+	struct stat st_buf;
+	char * buffer;
+	int ret;
+	if(fatx_stat(fatx, path, &st_buf) == -ENOENT) {
+		printf("\"%s\" does exist.\n", path);
+		return;
+	}
+	buffer = (char *) malloc(st_buf.st_size);
+	ret = fatx_read(fatx, path, buffer, st_buf.st_size, st_buf.st_size);
+	printf("Filesize is %u\n", st_buf.st_size);
+	printf("Read returned %d\n", ret);
+	free(buffer);
+}
+
 int
 main(int argc, char* argv[])
 {
 	fatx_t fatx;
+	fatx_options.user = getuid();
+	fatx_options.group = getgid();
 	if (argc < 2) {
 		printf("Not enough args!\n");
 		return -1;
 	}
-	fatx = fatx_init(argv[1]);
+	fatx = fatx_init(argv[1], &fatx_options);
+	test_read(fatx, "/Cache/TU_1A581VI_000000K000000.0000000000085", "");
 	//test_initFree(argv[1]);
 	//test_getFatEntry(argv[1]);
-	test_listDir(fatx, "/Content/E0000211D831B603/FFFE07D1/00010000/E0000211D831B603");
+	//test_listDir(fatx, "/Cache");
 	test_testStat(fatx, "/Content/E0000211D831B603/FFFE07D1/00010000/E0000211D831B603");
+	test_testStat(fatx, "/");
 	test_splitPath();
 	return 0;
 }

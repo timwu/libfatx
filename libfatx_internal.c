@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/disk.h>
 #include <sys/types.h>
+#include <syslog.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
@@ -216,9 +217,10 @@ fatx_readDirectoryEntry(fatx_handle *   fatx_h,
 		iter->entryNo = 0;
 		iter->clusterNo = fatx_readFatEntry(iter->fatx_h, iter->clusterNo);
 	}
-	if(fatx_isEOC(iter->fatx_h, iter->clusterNo)) goto finish;
+	if(fatx_isEOC(iter->fatx_h, iter->clusterNo) || IS_FREE_CLUSTER(iter->clusterNo)) 
+		goto finish;
 	cacheEntry = fatx_getCluster(iter->fatx_h, iter->clusterNo);
-	directoryEntry = &((fatx_directory_entry *) cacheEntry->data)[iter->entryNo];
+	directoryEntry = &cacheEntry->dirEntries[iter->entryNo];
 	if(directoryEntry->filenameSz == 0xFF) {
 		directoryEntry = NULL;
 		goto finish;
@@ -267,6 +269,50 @@ fatx_makeTimeType(uint16_t date, uint16_t time)
 										 .tm_sec = (time & 0x1F) << 1,
 										 .tm_isdst = -1,
 										 .tm_wday = 0,
-										 .tm_yday = 0,																																	          };
+										 .tm_yday = 0,																								         };
 	return mktime(&time_struct);
 }
+
+int
+fatx_readFromDirectoryEntry(fatx_handle          * fatx_h,
+									 fatx_directory_entry * directoryEntry,
+									 char                 * buf,
+									 off_t                  offset,
+									 size_t                 len)
+{
+	uint32_t                    currentClusterNo = SWAP32(directoryEntry->firstCluster);
+	uint32_t                    fileClusterNo    = (offset / FAT_CLUSTER_SZ);
+	uint32_t                    i, bytesRead = 0, retVal;
+	fatx_cache_entry          * cacheEntry       = NULL;
+	if(offset >= SWAP32(directoryEntry->fileSize)) {
+		return -EOVERFLOW;
+	}
+	len = MIN(len, SWAP32(directoryEntry->fileSize) - offset);
+	retVal = len;
+	offset = offset % FAT_CLUSTER_SZ;
+	FATX_LOCK(fatx_h);
+	for(i = 0; i < fileClusterNo; i++) {
+		currentClusterNo = fatx_readFatEntry(fatx_h, currentClusterNo);
+		if(fatx_isEOC(fatx_h, currentClusterNo) || IS_FREE_CLUSTER(currentClusterNo)) {
+			retVal = -EBADF;
+			goto finish;
+		}
+	}
+	while(len > 0) {
+		if(fatx_isEOC(fatx_h, currentClusterNo) || IS_FREE_CLUSTER(currentClusterNo)) {
+			retVal = -EBADF;
+			goto finish;
+		}
+		bytesRead = MIN(len, FAT_CLUSTER_SZ - offset);
+		cacheEntry = fatx_getCluster(fatx_h, currentClusterNo);
+		memcpy(buf, cacheEntry->data + offset, bytesRead);
+		len -= bytesRead;
+		buf += bytesRead;
+		offset = 0;
+		currentClusterNo = fatx_readFatEntry(fatx_h, currentClusterNo);
+	}
+finish:
+	FATX_UNLOCK(fatx_h);
+	return retVal;
+}
+

@@ -12,9 +12,14 @@
 #include "libfatx.h"
 
 fatx_t
-fatx_init(const char * path)
+fatx_init(const char     * path,
+			 fatx_options_t * options)
 {  
    fatx_handle * fatx = (fatx_handle *) calloc(1, sizeof(fatx_handle));
+	if(options == NULL)
+		goto error;
+	memcpy(&fatx->options, options, sizeof(fatx_options_t));
+	fatx->options.filePerm &= 0777; // only the file permissions are allowed here.
    if((fatx->dev = open(path, O_RDONLY)) <= 0)
 		goto error;
 	if(pthread_mutexattr_init(&fatx->mutexAttr))
@@ -67,7 +72,25 @@ fatx_read(fatx_t      fatx,
 	       off_t       offset, 
 	       size_t      size)
 {
-   return 0;
+	fatx_directory_entry * directoryEntry;
+	fatx_filename_list   * fnList = NULL;
+	int                    retVal = 0;
+	fnList = fatx_splitPath(path);
+	if(fnList == NULL) {
+		retVal = -ENOENT;
+		goto finish;
+	}
+	FATX_LOCK(fatx);
+	directoryEntry = fatx_findDirectoryEntry(fatx, fnList, NULL);
+	if(directoryEntry == NULL) {
+		retVal = -ENOENT;
+		goto finish;
+	}
+	retVal = fatx_readFromDirectoryEntry(fatx, directoryEntry, buf, offset, size);
+finish:
+	FATX_UNLOCK(fatx);
+	fatx_freeFilenameList(fnList);
+	return retVal;
 }
 
 int
@@ -87,24 +110,36 @@ fatx_stat(fatx_t       fatx,
 {
 	fatx_directory_entry * directoryEntry;
 	fatx_filename_list *   fnList;
+	int err = 0;
 	FATX_LOCK(fatx);
 	fnList = fatx_splitPath(path);
 	if(fnList == NULL) {
 		// Root directory.
-		st_buf->st_mode = S_IFDIR;
+		st_buf->st_mode = S_IFDIR | fatx->options.filePerm;
 		st_buf->st_nlink = 1;
+		st_buf->st_size = 0;
+		st_buf->st_uid = fatx->options.user;
+		st_buf->st_gid = fatx->options.group;
 	} else {
 		directoryEntry = fatx_findDirectoryEntry(fatx, fnList, NULL);
 		fatx_freeFilenameList(fnList);
-		if(directoryEntry == NULL) return -ENOENT;
+		if(directoryEntry == NULL) {
+			err = -ENOENT;
+			goto finish;
+		}
 		st_buf->st_mode = IS_FOLDER(directoryEntry) ? S_IFDIR : S_IFREG;
+		st_buf->st_mode |= fatx->options.filePerm;
 		st_buf->st_nlink = 1;
 		st_buf->st_size = SWAP32(directoryEntry->fileSize);
 		st_buf->st_mtime = fatx_makeTimeType(SWAP16(directoryEntry->modificationDate), 
 														 SWAP16(directoryEntry->modificationTime));
 		st_buf->st_atime = fatx_makeTimeType(SWAP16(directoryEntry->accessDate), 
 														 SWAP16(directoryEntry->accessTime));
+		st_buf->st_uid = fatx->options.user;
+		st_buf->st_gid = fatx->options.group;
 	}
+finish:
+	FATX_UNLOCK(fatx);
    return 0;
 }
 
