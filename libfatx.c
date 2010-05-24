@@ -163,7 +163,22 @@ int
 fatx_mkfile(fatx_t      fatx, 
 	         const char* path)
 {
-   return 0;
+	int                  err       = 0;
+	fatx_filename_list * splitPath = fatx_splitPath(path);
+	fatx_filename_list * dirname   = fatx_dirname(splitPath);
+	fatx_filename_list * basename  = fatx_basename(splitPath);
+	FATX_LOCK(fatx);
+	fatx_directory_entry * folder = fatx_findDirectoryEntry(fatx, dirname, NULL);
+	if(folder == NULL) {
+		err = -ENOENT;
+		goto finish;
+	}
+finish:
+	FATX_UNLOCK(fatx);
+	fatx_freeFilenameList(splitPath);
+	fatx_freeFilenameList(dirname);
+	fatx_freeFilenameList(basename);
+   return err;
 }
 
 int

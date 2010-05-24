@@ -219,6 +219,15 @@ uint32_t fatx_calcFatPages(off_t dataStart);
 uint32_t fatx_readFatEntry(fatx_handle * fatx_h, uint32_t entryNo);
 
 /**
+ * Write a FAT entry
+ *
+ * \param fatx_h the fatx object.
+ * \param entryNo the entry to write.
+ * \param value the value to write into the FAT
+ */
+void fatx_writeFatEntry(fatx_handle * fatx_h, uint32_t entryNo, uint32_t value);
+
+/**
  * Get a FAT page cache entry.
  *
  * \param fatx_h the fatx object.
@@ -301,6 +310,22 @@ void fatx_freeFilenameList(fatx_filename_list * fnList);
 fatx_filename_list * fatx_splitPath(const char * path);
 
 /**
+ * Grab the basename from a filename list split path.
+ *
+ * \param fnList filename list path.
+ * \return basename filename list element.
+ */
+fatx_filename_list * fatx_basename(fatx_filename_list * fnList);
+
+/**
+ * Get the dirname from a filename list split path.
+ *
+ * \param fnList filename list.
+ * \param dirname filename list.
+ */
+fatx_filename_list * fatx_dirname(fatx_filename_list * fnList);
+
+/**
  * Create a dir iterator.
  *
  * \param fatx_h the fatx object.
@@ -360,4 +385,34 @@ int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * dir
  * \return number of free clusters.
  */
 uint32_t fatx_findNumberFreeCluster(fatx_handle * fatx_h);
+
+/**
+ * Initialize a cluster as an empty directory.
+ *
+ * \param fatx_h the fatx object
+ * \param clusterNo the cluster to initialize.
+ */
+void fatx_initDirCluster(fatx_handle * fatx_h, uint32_t clusterNo);
+
+/**
+ * Get the next open directory entry in a folder.
+ *
+ * \param fatx_h the fatx object
+ * \param folder the directory to look in.
+ * \return reference to the first empty directory entry.
+ */
+fatx_directory_entry * fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h,
+																		 fatx_directory_entry * folder);
+
+/**
+ * Make a file in the given directory
+ *
+ * \param fatx_h the fatx object
+ * \param directoryEntry the folder to create the file in.
+ * \param filename the name of the file to create.
+ * \return error code.
+ */
+int fatx_mkFileInDirectory(fatx_handle * fatx_h, fatx_directory_entry * directoryEntry,
+									fatx_filename_list * filename);
+
 #endif // __LIBFATX_INTERNAL_H__

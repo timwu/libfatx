@@ -10,13 +10,26 @@ fatx_options_t fatx_options = {
 			.filePerm = 0555,
 };
 
-void test_splitPath(void)
+void test_splitPath(const char * path)
 {
-	fatx_filename_list * list = fatx_splitPath("/Content");
-	printf("path split test: \n");
-	for(;list != NULL; list = list->next) {
-		printf("\tentry = %s\n", list->filename);
-	}
+	fatx_filename_list * list = fatx_splitPath(path);
+	fatx_filename_list *dirname, *basename;
+	printf("full path:\n");
+	fatx_printFilenameList(list);
+	printf("dirname:\n");
+	dirname = fatx_dirname(list);
+	fatx_printFilenameList(dirname);
+	printf("basename:\n");
+	basename = fatx_basename(list);
+	fatx_printFilenameList(basename);
+	printf("origina:\n");
+	fatx_printFilenameList(list);
+
+	//for(;list != NULL; list = list->next) {
+		//printf("\tentry = %s\n", list->filename);
+	//}
+	fatx_freeFilenameList(basename);
+	fatx_freeFilenameList(dirname);
 	fatx_freeFilenameList(list);
 }
 
@@ -112,10 +125,10 @@ main(int argc, char* argv[])
 	//test_initFree(argv[1]);
 	//test_getFatEntry(argv[1]);
 	//test_listDir(fatx, "/Cache");
-	test_testStat(fatx, "/Content/E0000211D831B603/FFFE07D1/00010000/E0000211D831B603");
+	//test_testStat(fatx, "/Content/E0000211D831B603/FFFE07D1/00010000/E0000211D831B603");
 	//test_testStat(fatx, "/");
-	//test_splitPath();
-	test_findFreeCluster(fatx, 0);
-	test_numberFreeClusters(fatx);
+	test_splitPath("/a");
+	//test_findFreeCluster(fatx, 0);
+	//test_numberFreeClusters(fatx);
 	return 0;
 }

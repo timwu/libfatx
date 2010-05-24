@@ -83,6 +83,30 @@ fatx_readFatEntry(fatx_handle * fatx_h,
 	return entry;
 }
 
+void
+fatx_writeFatEntry(fatx_handle *fatx_h,
+						 uint32_t     clusterNo,
+						 uint32_t     value)
+{
+	uint32_t pageNo, entryNo;
+	fatx_fat_cache_entry * cacheEntry;
+	FATX_LOCK(fatx_h);
+	if (fatx_h->fatType == FATX32) {
+		pageNo = clusterNo / FATX32_ENTRIES_PER_PAGE;
+		entryNo = clusterNo & (FATX32_ENTRIES_PER_PAGE - 1);
+		cacheEntry = fatx_getFatPage(fatx_h, pageNo);
+		cacheEntry->dirty = 1;
+		cacheEntry->fatx32Entries[entryNo] = SWAP32(value);
+	} else {
+		pageNo = clusterNo / FATX16_ENTRIES_PER_PAGE;
+		entryNo = clusterNo & (FATX16_ENTRIES_PER_PAGE - 1);
+		cacheEntry = fatx_getFatPage(fatx_h, pageNo);
+		cacheEntry->dirty = 1;
+		cacheEntry->fatx16Entries[entryNo] = SWAP16(value);
+	}
+	FATX_UNLOCK(fatx_h);
+}
+
 uint32_t
 fatx_findFreeCluster(fatx_handle * fatx_h,
                      uint32_t      startClusterNo)
@@ -133,6 +157,7 @@ fatx_loadFatPage(fatx_handle * fatx_h,
 	entry->dirty = 0;
 	entry->pageNo = pageNo;
 	entry->noFreeCluster = 0;
+	// Scan for free clusters in the FAT page.
 	if(fatx_h->fatType == FATX32) {
 		for(i = 0; i < FATX32_ENTRIES_PER_PAGE; i++) {
 			if(!IS_FREE_CLUSTER(entry->fatx32Entries[i])) continue;
@@ -158,10 +183,14 @@ fatx_loadFatPage(fatx_handle * fatx_h,
 }
 
 void
-fatx_flushFatPage(fatx_handle * fatx_h,
-						uint32_t      pageNo)
+fatx_flushFatCacheEntry(fatx_handle          * fatx_h,
+								fatx_fat_cache_entry * cacheEntry)
 {
-
+	FATX_LOCK(fatx_h);
+	lseek(fatx_h->dev, FAT_OFFSET + (pageNo * FAT_PAGE_SZ), SEEK_SET);
+	write(fatx_h->dev, entry->data, FAT_PAGE_SZ);
+	cacheEntry->dirty = 0;
+	cacheEntry->pageNo = pageNo;
 }
 
 fatx_cache_entry * 
@@ -234,6 +263,44 @@ fatx_splitPath(const char * path)
 	return list;
 }
 
+fatx_filename_list *
+fatx_basename(fatx_filename_list * path)
+{
+	fatx_filename_list * basename;
+	if(path == NULL) return NULL;
+	while(path->next != NULL) {
+		path = path->next;
+	}
+	basename = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
+	memcpy(basename, path, sizeof(fatx_filename_list));
+	return basename;
+}
+
+fatx_filename_list *
+fatx_dirname(fatx_filename_list * path)
+{
+	fatx_filename_list * dirname;
+	if(path == NULL || path->next == NULL) return NULL;
+	dirname = (fatx_filename_list *) malloc(sizeof(fatx_filename_list));
+	memcpy(dirname, path, sizeof(fatx_filename_list));
+	dirname->next = fatx_dirname(path->next);
+	return dirname;
+}
+
+void
+fatx_printFilenameList(fatx_filename_list * fnList)
+{
+	if(fnList == NULL) {
+		printf("/\n");
+		return;
+	}
+	while(fnList != NULL) {
+		printf("/%s", fnList->filename);
+		fnList = fnList->next;
+	}
+	printf("\n");
+}
+
 fatx_dir_iter *
 fatx_createDirIter(fatx_handle *          fatx_h,
 						 fatx_directory_entry * directoryEntry)
@@ -262,13 +329,14 @@ fatx_readDirectoryEntry(fatx_handle *   fatx_h,
 {
 	fatx_directory_entry   * directoryEntry = NULL;
 	fatx_cache_entry       * cacheEntry;
+	uint32_t                 nextCluster;
 	FATX_LOCK(iter->fatx_h);
 	if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER) {
+		nextCluster = fatx_readFatEntry(fatx_h, iter->clusterNo);
+		if (fatx_isEOC(fatx_h, nextCluster)) goto finish;
 		iter->entryNo = 0;
-		iter->clusterNo = fatx_readFatEntry(iter->fatx_h, iter->clusterNo);
+		iter->clusterNo = nextCluster;
 	}
-	if(fatx_isEOC(iter->fatx_h, iter->clusterNo) || IS_FREE_CLUSTER(iter->clusterNo)) 
-		goto finish;
 	cacheEntry = fatx_getCluster(iter->fatx_h, iter->clusterNo);
 	directoryEntry = &cacheEntry->dirEntries[iter->entryNo];
 	if(directoryEntry->filenameSz == 0xFF) {
@@ -379,3 +447,48 @@ fatx_findNumberFreeCluster(fatx_handle * fatx_h)
 	FATX_UNLOCK(fatx_h);
 	return freeClusters;
 }
+
+void
+fatx_initDirCluster(fatx_handle * fatx_h,
+                    uint32_t      clusterNo)
+{
+	fatx_cache_entry * cacheEntry;
+	uint32_t           i;
+	FATX_LOCK(fatx_h);
+	cacheEntry = fatx_getCluster(fatx_h, clusterNo);
+	cacheEntry->dirty = 1;
+	for(i = 0; i < DIR_ENTRIES_PER_CLUSTER; i++) {
+		cacheEntry->dirEntries[i].filenameSz = 0xFF;
+	}
+	FATX_UNLOCK(fatx_h);
+}
+
+fatx_directory_entry *
+fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * folder)
+{
+	fatx_directory_entry * entry = NULL;
+	uint32_t               freeCluster;
+	fatx_cache_entry     * cacheEntry;
+	FATX_LOCK(fatx_h);
+	fatx_dir_iter * iter = fatx_createDirIter(fatx_h, folder);
+	while ( (entry = fatx_readDirectoryEntry(fatx_h, iter)) ) {
+		if(!IS_VALID_ENTRY(entry)) break;
+	}
+	if(entry == NULL) {
+		if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER &&
+			// Hit the last spot the last cluster of a folder. need to make a new one.
+		   fatx_isEOC(fatx_h, fatx_readFatEntry(fatx_h, iter->clusterNo))) {
+			freeCluster = fatx_findFreeCluster(fatx_h, iter->clusterNo);
+			fatx_initDirCluster(fatx_h, freeCluster);
+			cacheEntry = fatx_getCluster(fatx_h, freeCluster);
+			entry = cacheEntry->dirEntries;
+		} else {
+			// somewhere at the end of a folder.
+			cacheEntry = fatx_getCluster(fatx_h, iter->clusterNo);
+			entry = cacheEntry->dirEntries + iter->entryNo;
+		}
+	}
+	FATX_UNLOCK(fatx_h);
+	return entry;
+}
+
