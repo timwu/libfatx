@@ -77,12 +77,26 @@ test_read(fatx_t fatx, const char * path, const char * outfile)
 		return;
 	}
 	buffer = (char *) malloc(st_buf.st_size);
-	ret = fatx_read(fatx, path, buffer, st_buf.st_size, st_buf.st_size);
+	ret = fatx_read(fatx, path, buffer, st_buf.st_size -1, st_buf.st_size);
 	printf("Filesize is %u\n", st_buf.st_size);
 	printf("Read returned %d\n", ret);
 	free(buffer);
 }
 
+void
+test_findFreeCluster(fatx_t fatx, uint32_t startCluster)
+{
+	printf("first free cluster 0x%x\n", fatx_findFreeCluster(fatx, startCluster));
+}
+
+void
+test_numberFreeClusters(fatx_t fatx)
+{
+	uint32_t freeClusters = fatx_findNumberFreeCluster(fatx);
+	fatx_printInfo(fatx);
+	printf("Number of free clusters %u\n", freeClusters);
+	printf("Total free space %u bytes\n", freeClusters * FAT_CLUSTER_SZ);
+}
 int
 main(int argc, char* argv[])
 {
@@ -94,12 +108,14 @@ main(int argc, char* argv[])
 		return -1;
 	}
 	fatx = fatx_init(argv[1], &fatx_options);
-	test_read(fatx, "/Cache/TU_1A581VI_000000K000000.0000000000085", "");
+	//test_read(fatx, "/Cache/TU_1A581VI_000000K000000.0000000000085", "");
 	//test_initFree(argv[1]);
 	//test_getFatEntry(argv[1]);
 	//test_listDir(fatx, "/Cache");
 	test_testStat(fatx, "/Content/E0000211D831B603/FFFE07D1/00010000/E0000211D831B603");
-	test_testStat(fatx, "/");
-	test_splitPath();
+	//test_testStat(fatx, "/");
+	//test_splitPath();
+	test_findFreeCluster(fatx, 0);
+	test_numberFreeClusters(fatx);
 	return 0;
 }

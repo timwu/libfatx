@@ -95,6 +95,10 @@ typedef struct fatx_fat_cache_entry {
 	uint32_t pageNo;
 	/** Whether this fat page has been written to. */
 	char     dirty;
+	/** Number of free clusters in this FAT page. */
+	uint16_t noFreeCluster;
+	/** First free cluster number */
+	uint16_t firstFreeCluster;
 	/** The actual FAT entries */
 	union {
 		char     data[FAT_PAGE_SZ];
@@ -129,6 +133,8 @@ typedef struct fatx_handle {
    pthread_mutex_t 		devLock; 
    /** Number of clusters in the partition */
    uint32_t        		nClusters; 
+	/** Number of fat pages */
+	uint32_t             noFatPages;
    /** FAT type, either fat16 or fat32 */
    enum FAT_TYPE  	 	fatType; 
 	/** Offset to the start of the data. */
@@ -196,6 +202,14 @@ uint32_t fatx_calcClusters(int dev);
 off_t fatx_calcDataStart(int fatType, uint32_t clusters);
 
 /**
+ * Calculate the number of FAT pages given the data start.
+ * 
+ * \param dataStart
+ * \return number of FAT pages.
+ */
+uint32_t fatx_calcFatPages(off_t dataStart);
+
+/**
  * Retrieve a FAT entry
  *
  * \param fatx_h the fatx object.
@@ -203,6 +217,24 @@ off_t fatx_calcDataStart(int fatType, uint32_t clusters);
  * \return fatx entry
  */
 uint32_t fatx_readFatEntry(fatx_handle * fatx_h, uint32_t entryNo);
+
+/**
+ * Get a FAT page cache entry.
+ *
+ * \param fatx_h the fatx object.
+ * \param pageNo the FAT page to get.
+ * \return FAT cache entry corresponding to the requested page.
+ */
+fatx_fat_cache_entry * fatx_getFatPage(fatx_handle * fatx_h, uint32_t pageNo);
+
+/**
+ * Find a free cluster
+ *
+ * \param fatx_h the fatx object.
+ * \param startClusterNo cluster to start searching from.
+ * \return free cluster number.
+ */
+uint32_t fatx_findFreeCluster(fatx_handle* fatx_h, uint32_t startClusterNo);
 
 /**
  * Is cluster then end of chain
@@ -321,4 +353,11 @@ time_t fatx_makeTimeType(uint16_t date, uint16_t time);
 int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * directoryEntry,
 										  char * buf, off_t offset, size_t len);
 
+/**
+ * Find the number of free clusters in the partition.
+ *
+ * \param fatx_h the fatx object.
+ * \return number of free clusters.
+ */
+uint32_t fatx_findNumberFreeCluster(fatx_handle * fatx_h);
 #endif // __LIBFATX_INTERNAL_H__

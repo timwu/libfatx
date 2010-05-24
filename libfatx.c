@@ -31,6 +31,7 @@ fatx_init(const char     * path,
    fatx->nClusters = fatx_calcClusters(fatx->dev);
 	fatx->fatType = fatx->nClusters < FATX32_MIN_CLUSTERS ? FATX16 : FATX32;
 	fatx->dataStart = fatx_calcDataStart(fatx->fatType, fatx->nClusters);
+	fatx->noFatPages = fatx_calcFatPages(fatx->dataStart);
 	// Load up the 0'th pages to intialize the caches
 	fatx_loadFatPage(fatx, 0);
    return (fatx_t) fatx;
@@ -46,8 +47,15 @@ error:
 void
 fatx_free(fatx_t fatx)
 {
+	int i = 0;
 	if (fatx == NULL)
 		return;
+	for(i = 0; i < CACHE_SIZE; i++) {
+		fatx_flushCluster(fatx, fatx->cache[i].clusterNo);
+	}
+	for(i = 0; i < FAT_CACHE_SIZE; i++) {
+		fatx_flushFatPage(fatx, fatx->fatCache[i].pageNo);
+	}
 	pthread_mutex_destroy(&fatx->devLock);
 	pthread_mutexattr_destroy(&fatx->mutexAttr);
 	close(fatx->dev);
@@ -63,6 +71,7 @@ fatx_printInfo(fatx_t fatx)
 	printf("\tnClusters = %u\n", fatx_h->nClusters);
 	printf("\tfatType = %d\n", fatx_h->fatType);
 	printf("\tdataStart = 0x%lx\n", fatx_h->dataStart);
+	printf("\tnoFatPages = 0x%x\n", fatx_h->noFatPages);
 }
 
 int

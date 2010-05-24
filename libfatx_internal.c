@@ -56,6 +56,12 @@ fatx_calcDataStart(int fatType, uint32_t clusters)
 }
 
 uint32_t
+fatx_calcFatPages(off_t dataStart)
+{
+	return (dataStart - FAT_OFFSET) / FAT_PAGE_SZ;
+}
+
+uint32_t
 fatx_readFatEntry(fatx_handle * fatx_h, 
 					   uint32_t      clusterNo)
 {
@@ -65,24 +71,28 @@ fatx_readFatEntry(fatx_handle * fatx_h,
 	if (fatx_h->fatType == FATX32) {
 		pageNo = clusterNo / FATX32_ENTRIES_PER_PAGE;
 		entryNo = clusterNo & (FATX32_ENTRIES_PER_PAGE - 1);
-		cacheEntry = &fatx_h->fatCache[pageNo % FAT_CACHE_SIZE];
-		if(cacheEntry->pageNo != pageNo) {
-			if(cacheEntry->dirty) fatx_flushFatPage(fatx_h, pageNo);
-			fatx_loadFatPage(fatx_h, pageNo);
-		}
+		cacheEntry = fatx_getFatPage(fatx_h, pageNo);
 		entry = SWAP32(cacheEntry->fatx32Entries[entryNo]);
 	} else {
 		pageNo = clusterNo / FATX16_ENTRIES_PER_PAGE;
 		entryNo = clusterNo & (FATX16_ENTRIES_PER_PAGE - 1);
-		cacheEntry = &fatx_h->fatCache[pageNo % FAT_CACHE_SIZE];
-		if(cacheEntry->pageNo != pageNo) {
-			if(cacheEntry->dirty) fatx_flushFatPage(fatx_h, pageNo);
-			fatx_loadFatPage(fatx_h, pageNo);
-		}
+		cacheEntry = fatx_getFatPage(fatx_h, pageNo);
 		entry = SWAP16(cacheEntry->fatx16Entries[entryNo]);
 	}
 	FATX_UNLOCK(fatx_h);
 	return entry;
+}
+
+uint32_t
+fatx_findFreeCluster(fatx_handle * fatx_h,
+                     uint32_t      startClusterNo)
+{
+	startClusterNo = (startClusterNo + 1) % fatx_h->nClusters;
+	FATX_LOCK(fatx_h);
+	while(!IS_FREE_CLUSTER(fatx_readFatEntry(fatx_h, startClusterNo)))
+		startClusterNo = (startClusterNo + 1) % fatx_h->nClusters;
+	FATX_UNLOCK(fatx_h);
+	return startClusterNo;
 }
 
 char
@@ -95,15 +105,55 @@ fatx_isEOC(fatx_handle * fatx_h,
 		return (clusterNo >= 0xFFF8);
 }
 
+fatx_fat_cache_entry *
+fatx_getFatPage(fatx_handle * fatx_h,
+					 uint32_t      pageNo)
+{
+	fatx_fat_cache_entry * entry = NULL;
+	FATX_LOCK(fatx_h);
+	entry = fatx_h->fatCache + (pageNo % FAT_CACHE_SIZE);
+	if(entry->pageNo != pageNo) {
+		if(entry->dirty) fatx_flushFatPage(fatx_h, pageNo);
+		fatx_loadFatPage(fatx_h, pageNo);
+	}
+	FATX_UNLOCK(fatx_h);
+	return entry;
+}
+
 void
 fatx_loadFatPage(fatx_handle * fatx_h,
 					  uint32_t      pageNo)
 {
+	fatx_fat_cache_entry * entry = fatx_h->fatCache + (pageNo % FAT_CACHE_SIZE);
+	int                    i;
+	uint16_t               lastFreeCluster;
 	FATX_LOCK(fatx_h);
 	lseek(fatx_h->dev, FAT_OFFSET + (pageNo * FAT_PAGE_SZ), SEEK_SET);
-	read(fatx_h->dev, fatx_h->fatCache[pageNo % FAT_CACHE_SIZE].data, FAT_PAGE_SZ);
-	fatx_h->fatCache[pageNo % FAT_CACHE_SIZE].dirty = 0;
-	fatx_h->fatCache[pageNo % FAT_CACHE_SIZE].pageNo = pageNo;
+	read(fatx_h->dev, entry->data, FAT_PAGE_SZ);
+	entry->dirty = 0;
+	entry->pageNo = pageNo;
+	entry->noFreeCluster = 0;
+	if(fatx_h->fatType == FATX32) {
+		for(i = 0; i < FATX32_ENTRIES_PER_PAGE; i++) {
+			if(!IS_FREE_CLUSTER(entry->fatx32Entries[i])) continue;
+			if(entry->noFreeCluster) {
+				entry->fatx32Entries[lastFreeCluster] = i;
+			} else {
+				entry->firstFreeCluster = i;
+			}
+			entry->noFreeCluster++;
+		}
+	} else {
+		for(i = 0; i < FATX16_ENTRIES_PER_PAGE; i++) {
+			if(!IS_FREE_CLUSTER(entry->fatx16Entries[i])) continue;
+			if(entry->noFreeCluster) {
+				entry->fatx16Entries[lastFreeCluster] = i;
+			} else {
+				entry->firstFreeCluster = i;
+			}
+			entry->noFreeCluster++;
+		}
+	}	
 	FATX_UNLOCK(fatx_h);
 }
 
@@ -316,3 +366,16 @@ finish:
 	return retVal;
 }
 
+uint32_t
+fatx_findNumberFreeCluster(fatx_handle * fatx_h)
+{
+	uint32_t freeClusters = 0, i;
+	fatx_fat_cache_entry * entry;
+	FATX_LOCK(fatx_h);
+	for(i = 0; i < fatx_h->noFatPages; i++) {
+		entry = fatx_getFatPage(fatx_h, i);
+		freeClusters += entry->noFreeCluster;
+	}
+	FATX_UNLOCK(fatx_h);
+	return freeClusters;
+}
