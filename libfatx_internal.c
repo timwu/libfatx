@@ -186,11 +186,29 @@ void
 fatx_flushFatCacheEntry(fatx_handle          * fatx_h,
 								fatx_fat_cache_entry * cacheEntry)
 {
+	int      i;
+	uint32_t freeCluster, nextFreeCluster;
 	FATX_LOCK(fatx_h);
-	lseek(fatx_h->dev, FAT_OFFSET + (pageNo * FAT_PAGE_SZ), SEEK_SET);
-	write(fatx_h->dev, entry->data, FAT_PAGE_SZ);
+	// Clear out the temporary free cluster chain
+	freeCluster = cacheEntry->firstFreeCluster;
+	if(fatx_h->fatType == FATX32) {
+		for(i = 0; i < cacheEntry->noFreeCluster; i++) {
+			nextFreeCluster = cacheEntry->fatx32Entries[freeCluster];
+			cacheEntry->fatx32Entries[freeCluster] = 0;
+			freeCluster = nextFreeCluster;
+		}
+	} else {
+		for(i = 0; i < cacheEntry->noFreeCluster; i++) {
+			nextFreeCluster = cacheEntry->fatx16Entries[freeCluster];
+			cacheEntry->fatx16Entries[freeCluster] = 0;
+			freeCluster = nextFreeCluster;
+		}
+	}
+	lseek(fatx_h->dev, FAT_OFFSET + (cacheEntry->pageNo * FAT_PAGE_SZ), SEEK_SET);
+	write(fatx_h->dev, cacheEntry->data, FAT_PAGE_SZ);
 	cacheEntry->dirty = 0;
-	cacheEntry->pageNo = pageNo;
+	cacheEntry->pageNo = 0;
+	FATX_UNLOCK(fatx_h);
 }
 
 fatx_cache_entry * 
