@@ -124,25 +124,27 @@ typedef struct fatx_cache_entry {
 /** Internal fatx structure */
 typedef struct fatx_handle {
 	/** Mount options */
-	fatx_options_t       options;
+	fatx_options_t         options;
    /** File descriptor of the device */
-   int             		dev; 
+   int             		  dev; 
 	/** Mutex attributes */
-	pthread_mutexattr_t  mutexAttr;
+	pthread_mutexattr_t    mutexAttr;
    /** Lock to synchronize access to the device */
-   pthread_mutex_t 		devLock; 
+   pthread_mutex_t 		  devLock; 
    /** Number of clusters in the partition */
-   uint32_t        		nClusters; 
+   uint32_t        		  nClusters; 
 	/** Number of fat pages */
-	uint32_t             noFatPages;
+	uint32_t               noFatPages;
    /** FAT type, either fat16 or fat32 */
-   enum FAT_TYPE  	 	fatType; 
+   enum FAT_TYPE  	 	  fatType; 
 	/** Offset to the start of the data. */
-	off_t				 		dataStart;
+	off_t				 		  dataStart;
+	/** Root directory entry */
+	fatx_directory_entry   rootDirEntry;
 	/** Cache table */
-	fatx_cache_entry 	   cache[CACHE_SIZE];
+	fatx_cache_entry 	     cache[CACHE_SIZE];
 	/** FAT cache */
-	fatx_fat_cache_entry fatCache[FAT_CACHE_SIZE];
+	fatx_fat_cache_entry   fatCache[FAT_CACHE_SIZE];
 } fatx_handle;
 
 /** Filename linked list */
@@ -219,6 +221,15 @@ uint32_t fatx_calcFatPages(off_t dataStart);
 uint32_t fatx_readFatEntry(fatx_handle * fatx_h, uint32_t entryNo);
 
 /**
+ * Find a free cluster starting from the given cluster
+ *
+ * \param fatx_h the fatx object.
+ * \param startingCluster the cluster to begin the search from.
+ * \return free cluster number
+ */
+uint32_t fatx_findFreeCluster(fatx_handle * fatx_h, uint32_t startingCluster);
+
+/**
  * Write a FAT entry
  *
  * \param fatx_h the fatx object.
@@ -237,15 +248,6 @@ void fatx_writeFatEntry(fatx_handle * fatx_h, uint32_t entryNo, uint32_t value);
 fatx_fat_cache_entry * fatx_getFatPage(fatx_handle * fatx_h, uint32_t pageNo);
 
 /**
- * Find a free cluster
- *
- * \param fatx_h the fatx object.
- * \param startClusterNo cluster to start searching from.
- * \return free cluster number.
- */
-uint32_t fatx_findFreeCluster(fatx_handle* fatx_h, uint32_t startClusterNo);
-
-/**
  * Is cluster then end of chain
  *
  * \param fatx_h the fatx object.
@@ -262,12 +264,12 @@ char fatx_isEOC(fatx_handle * fatx_h, uint32_t clusterNo);
 void fatx_loadFatPage(fatx_handle * fatx_h, uint32_t pageNo);
 
 /**
- * Write a fat page out to disk
+ * Flush the contents of a FAT cache entry out to disk.
  *
  * \param fatx_h the fatx object.
- * \param pageNo the FAT page to write out.
+ * \param cacheEntry the cache entry to flush
  */
-void fatx_flushFatPage(fatx_handle * fatx_h, uint32_t pageNo);
+void fatx_flushFatCacheEntry(fatx_handle * fatx_h, fatx_fat_cache_entry * cacheEntry);
 
 /**
  * Get a cached cluster
@@ -290,9 +292,9 @@ void fatx_loadCluster(fatx_handle * fatx_h, uint32_t clusterNo);
  * Write a cluster out to disk
  *
  * \param fatx_h the fatx object.
- * \param clusterNo the cluster to flush.
+ * \param cacheEntry the cache entry to flush out to disk
  */
-void fatx_flushCluster(fatx_handle * fatx_h, uint32_t clusterNo);
+void fatx_flushClusterCacheEntry(fatx_handle * fatx_h, fatx_cache_entry * cacheEntry);
 
 /**
  * Free a filename list
@@ -375,16 +377,23 @@ time_t fatx_makeTimeType(uint16_t date, uint16_t time);
  * \param len number of bytes to read from the file.
  * \return number of bytes read or a negative error code.
  */
-int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * directoryEntry,
+int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, 
+                                fatx_directory_entry * directoryEntry,
 										  char * buf, off_t offset, size_t len);
 
 /**
- * Find the number of free clusters in the partition.
+ * Write to a directory entry, increasing the size if necessary.
  *
- * \param fatx_h the fatx object.
- * \return number of free clusters.
+ * \param fatx the fatx object.
+ * \param directoryEntry the directory entry of the file to write to
+ * \param buf buffer to read the data fro.
+ * \param offset offset in the file to write to.
+ * \param len number of bytes to written to the file.
+ * \return number of bytes written or a negative error code.
  */
-uint32_t fatx_findNumberFreeCluster(fatx_handle * fatx_h);
+int fatx_writeToDirectoryEntry(fatx_handle * fatx_h, 
+                               fatx_directory_entry * directoryEntry,
+										 char * buf, off_t offset, size_t len);
 
 /**
  * Initialize a cluster as an empty directory.

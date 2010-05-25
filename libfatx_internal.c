@@ -137,7 +137,7 @@ fatx_getFatPage(fatx_handle * fatx_h,
 	FATX_LOCK(fatx_h);
 	entry = fatx_h->fatCache + (pageNo % FAT_CACHE_SIZE);
 	if(entry->pageNo != pageNo) {
-		if(entry->dirty) fatx_flushFatPage(fatx_h, pageNo);
+		if(entry->dirty) fatx_flushFatCacheEntry(fatx_h, entry);
 		fatx_loadFatPage(fatx_h, pageNo);
 	}
 	FATX_UNLOCK(fatx_h);
@@ -156,29 +156,6 @@ fatx_loadFatPage(fatx_handle * fatx_h,
 	read(fatx_h->dev, entry->data, FAT_PAGE_SZ);
 	entry->dirty = 0;
 	entry->pageNo = pageNo;
-	entry->noFreeCluster = 0;
-	// Scan for free clusters in the FAT page.
-	if(fatx_h->fatType == FATX32) {
-		for(i = 0; i < FATX32_ENTRIES_PER_PAGE; i++) {
-			if(!IS_FREE_CLUSTER(entry->fatx32Entries[i])) continue;
-			if(entry->noFreeCluster) {
-				entry->fatx32Entries[lastFreeCluster] = i;
-			} else {
-				entry->firstFreeCluster = i;
-			}
-			entry->noFreeCluster++;
-		}
-	} else {
-		for(i = 0; i < FATX16_ENTRIES_PER_PAGE; i++) {
-			if(!IS_FREE_CLUSTER(entry->fatx16Entries[i])) continue;
-			if(entry->noFreeCluster) {
-				entry->fatx16Entries[lastFreeCluster] = i;
-			} else {
-				entry->firstFreeCluster = i;
-			}
-			entry->noFreeCluster++;
-		}
-	}	
 	FATX_UNLOCK(fatx_h);
 }
 
@@ -186,28 +163,10 @@ void
 fatx_flushFatCacheEntry(fatx_handle          * fatx_h,
 								fatx_fat_cache_entry * cacheEntry)
 {
-	int      i;
-	uint32_t freeCluster, nextFreeCluster;
 	FATX_LOCK(fatx_h);
-	// Clear out the temporary free cluster chain
-	freeCluster = cacheEntry->firstFreeCluster;
-	if(fatx_h->fatType == FATX32) {
-		for(i = 0; i < cacheEntry->noFreeCluster; i++) {
-			nextFreeCluster = cacheEntry->fatx32Entries[freeCluster];
-			cacheEntry->fatx32Entries[freeCluster] = 0;
-			freeCluster = nextFreeCluster;
-		}
-	} else {
-		for(i = 0; i < cacheEntry->noFreeCluster; i++) {
-			nextFreeCluster = cacheEntry->fatx16Entries[freeCluster];
-			cacheEntry->fatx16Entries[freeCluster] = 0;
-			freeCluster = nextFreeCluster;
-		}
-	}
 	lseek(fatx_h->dev, FAT_OFFSET + (cacheEntry->pageNo * FAT_PAGE_SZ), SEEK_SET);
 	write(fatx_h->dev, cacheEntry->data, FAT_PAGE_SZ);
 	cacheEntry->dirty = 0;
-	cacheEntry->pageNo = 0;
 	FATX_UNLOCK(fatx_h);
 }
 
@@ -219,7 +178,7 @@ fatx_getCluster(fatx_handle * fatx_h,
 	FATX_LOCK(fatx_h);
 	cacheEntry = &fatx_h->cache[clusterNo % CACHE_SIZE];
 	if(cacheEntry->clusterNo != clusterNo) {
-		if(cacheEntry->dirty) fatx_flushCluster(fatx_h, clusterNo);
+		if(cacheEntry->dirty) fatx_flushClusterCacheEntry(fatx_h, cacheEntry);
 		fatx_loadCluster(fatx_h, clusterNo);
 	}
 	FATX_UNLOCK(fatx_h);
@@ -227,10 +186,16 @@ fatx_getCluster(fatx_handle * fatx_h,
 }
 
 void
-fatx_flushCluster(fatx_handle * fatx_h,
-						uint32_t      clusterNo)
+fatx_flushClusterCacheEntry(fatx_handle      * fatx_h,
+									 fatx_cache_entry * cacheEntry)
 {
-
+	FATX_LOCK(fatx_h);
+	off_t fileOffset = cacheEntry->clusterNo;
+	fileOffset *= FAT_CLUSTER_SZ;
+	lseek(fatx_h->dev, fatx_h->dataStart + fileOffset, SEEK_SET);
+	write(fatx_h->dev, cacheEntry->data, FAT_CLUSTER_SZ);
+	cacheEntry->dirty = 0;
+	FATX_UNLOCK(fatx_h);
 }
 
 void 
@@ -452,18 +417,56 @@ finish:
 	return retVal;
 }
 
-uint32_t
-fatx_findNumberFreeCluster(fatx_handle * fatx_h)
+int
+fatx_writeToDirectoryEntry(fatx_handle          * fatx_h,
+									fatx_directory_entry * directoryEntry,
+									char                 * buf,
+									off_t                  offset,
+									size_t                 len)
 {
-	uint32_t freeClusters = 0, i;
-	fatx_fat_cache_entry * entry;
-	FATX_LOCK(fatx_h);
-	for(i = 0; i < fatx_h->noFatPages; i++) {
-		entry = fatx_getFatPage(fatx_h, i);
-		freeClusters += entry->noFreeCluster;
+	uint32_t                    currentClusterNo = SWAP32(directoryEntry->firstCluster);
+	uint32_t                    fileClusterNo    = (offset / FAT_CLUSTER_SZ);
+	uint32_t                    i, bytesWrite = 0, retVal;
+	uint32_t                    nextClusterNo = 0;
+	uint32_t                    filesize = offset;
+	fatx_cache_entry          * cacheEntry       = NULL;
+	if(offset > SWAP32(directoryEntry->fileSize)) {
+		return -EOVERFLOW;
 	}
+	retVal = len;
+	offset = offset % FAT_CLUSTER_SZ;
+	FATX_LOCK(fatx_h);
+	for(i = 0; i < fileClusterNo; i++) {
+		currentClusterNo = fatx_readFatEntry(fatx_h, currentClusterNo);
+		if(fatx_isEOC(fatx_h, currentClusterNo) || IS_FREE_CLUSTER(currentClusterNo)) {
+			retVal = -EBADF;
+			goto finish;
+		}
+	}
+	while(len > 0) {
+		bytesWrite = MIN(len, FAT_CLUSTER_SZ - offset);
+		cacheEntry = fatx_getCluster(fatx_h, currentClusterNo);
+		memcpy(cacheEntry->data + offset, buf, bytesWrite);
+		cacheEntry->dirty = 1;
+		len -= bytesWrite;
+		buf += bytesWrite;
+		filesize += bytesWrite;
+		offset = 0;
+		nextClusterNo = fatx_readFatEntry(fatx_h, currentClusterNo);
+		if(fatx_isEOC(fatx_h, nextClusterNo)) {
+			nextClusterNo = fatx_findFreeCluster(fatx_h, currentClusterNo);
+			if (nextClusterNo == 0) {
+				retVal = -ENOSPC;
+				goto finish;
+			}
+			fatx_writeFatEntry(fatx_h, currentClusterNo, nextClusterNo);
+		}
+		currentClusterNo = nextClusterNo;
+	}
+finish:
+	directoryEntry->fileSize = SWAP32(MAX(filesize, SWAP32(directoryEntry->fileSize)));
 	FATX_UNLOCK(fatx_h);
-	return freeClusters;
+	return retVal;
 }
 
 void
@@ -490,13 +493,15 @@ fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * fol
 	FATX_LOCK(fatx_h);
 	fatx_dir_iter * iter = fatx_createDirIter(fatx_h, folder);
 	while ( (entry = fatx_readDirectoryEntry(fatx_h, iter)) ) {
-		if(!IS_VALID_ENTRY(entry)) break;
+		if(!IS_VALID_ENTRY(entry)) goto finish;
 	}
 	if(entry == NULL) {
 		if(iter->entryNo == DIR_ENTRIES_PER_CLUSTER &&
 			// Hit the last spot the last cluster of a folder. need to make a new one.
 		   fatx_isEOC(fatx_h, fatx_readFatEntry(fatx_h, iter->clusterNo))) {
 			freeCluster = fatx_findFreeCluster(fatx_h, iter->clusterNo);
+			if(freeCluster == 0) goto finish;
+			fatx_writeFatEntry(fatx_h, iter->clusterNo, SWAP32(freeCluster));
 			fatx_initDirCluster(fatx_h, freeCluster);
 			cacheEntry = fatx_getCluster(fatx_h, freeCluster);
 			entry = cacheEntry->dirEntries;
@@ -504,8 +509,10 @@ fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h, fatx_directory_entry * fol
 			// somewhere at the end of a folder.
 			cacheEntry = fatx_getCluster(fatx_h, iter->clusterNo);
 			entry = cacheEntry->dirEntries + iter->entryNo;
+			cacheEntry->dirty = 1;
 		}
 	}
+finish:
 	FATX_UNLOCK(fatx_h);
 	return entry;
 }

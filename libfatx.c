@@ -20,7 +20,7 @@ fatx_init(const char     * path,
 		goto error;
 	memcpy(&fatx->options, options, sizeof(fatx_options_t));
 	fatx->options.filePerm &= 0777; // only the file permissions are allowed here.
-   if((fatx->dev = open(path, O_RDONLY)) <= 0)
+   if((fatx->dev = open(path, O_RDWR)) <= 0)
 		goto error;
 	if(pthread_mutexattr_init(&fatx->mutexAttr))
 		goto error;
@@ -34,6 +34,8 @@ fatx_init(const char     * path,
 	fatx->noFatPages = fatx_calcFatPages(fatx->dataStart);
 	// Load up the 0'th pages to intialize the caches
 	fatx_loadFatPage(fatx, 0);
+	fatx->rootDirEntry.firstCluster = SWAP32(1);
+	fatx->rootDirEntry.attributes = 0x10;
    return (fatx_t) fatx;
 
 error:
@@ -51,10 +53,12 @@ fatx_free(fatx_t fatx)
 	if (fatx == NULL)
 		return;
 	for(i = 0; i < CACHE_SIZE; i++) {
-		fatx_flushCluster(fatx, fatx->cache[i].clusterNo);
+		if(fatx->cache[i].dirty)
+			fatx_flushClusterCacheEntry(fatx, fatx->cache + i);
 	}
 	for(i = 0; i < FAT_CACHE_SIZE; i++) {
-		fatx_flushFatPage(fatx, fatx->fatCache[i].pageNo);
+		if(fatx->fatCache[i].dirty)
+			fatx_flushFatCacheEntry(fatx, fatx->fatCache + i);
 	}
 	pthread_mutex_destroy(&fatx->devLock);
 	pthread_mutexattr_destroy(&fatx->mutexAttr);
@@ -90,7 +94,7 @@ fatx_read(fatx_t      fatx,
 		goto finish;
 	}
 	FATX_LOCK(fatx);
-	directoryEntry = fatx_findDirectoryEntry(fatx, fnList, NULL);
+	directoryEntry = fatx_findDirectoryEntry(fatx, fnList, &fatx->rootDirEntry);
 	if(directoryEntry == NULL) {
 		retVal = -ENOENT;
 		goto finish;
@@ -109,7 +113,26 @@ fatx_write(fatx_t      fatx,
 	        off_t       offset,
 	        size_t      size) 
 {
-   return 0;
+	fatx_directory_entry * directoryEntry;
+	fatx_filename_list   * fnList = NULL;
+	int                    retVal = 0;
+	fnList = fatx_splitPath(path);
+	if(fnList == NULL) {
+		// Writing into the root directory isn't possible.
+		retVal = -ENOENT;
+		goto finish;
+	}
+	FATX_LOCK(fatx);
+	directoryEntry = fatx_findDirectoryEntry(fatx, fnList, &fatx->rootDirEntry);
+	if(directoryEntry == NULL) {
+		retVal = -ENOENT;
+		goto finish;
+	}
+	retVal = fatx_writeToDirectoryEntry(fatx, directoryEntry, buf, offset, size);
+finish:
+	FATX_UNLOCK(fatx);
+	fatx_freeFilenameList(fnList);
+	return retVal;
 }
 
 int
@@ -130,7 +153,7 @@ fatx_stat(fatx_t       fatx,
 		st_buf->st_uid = fatx->options.user;
 		st_buf->st_gid = fatx->options.group;
 	} else {
-		directoryEntry = fatx_findDirectoryEntry(fatx, fnList, NULL);
+		directoryEntry = fatx_findDirectoryEntry(fatx, fnList, &fatx->rootDirEntry);
 		fatx_freeFilenameList(fnList);
 		if(directoryEntry == NULL) {
 			err = -ENOENT;
@@ -164,15 +187,34 @@ fatx_mkfile(fatx_t      fatx,
 	         const char* path)
 {
 	int                  err       = 0;
+	uint32_t             newFileCluster = 0;
+	fatx_directory_entry * folder  = &fatx->rootDirEntry;
+	fatx_directory_entry * newFile = NULL;
 	fatx_filename_list * splitPath = fatx_splitPath(path);
 	fatx_filename_list * dirname   = fatx_dirname(splitPath);
 	fatx_filename_list * basename  = fatx_basename(splitPath);
 	FATX_LOCK(fatx);
-	fatx_directory_entry * folder = fatx_findDirectoryEntry(fatx, dirname, NULL);
-	if(folder == NULL) {
+	if(dirname != NULL) {
+		// dirname isn't null so need to search for the folder
+		folder = fatx_findDirectoryEntry(fatx, dirname, &fatx->rootDirEntry);
+		if(folder == NULL) {
+			err = -ENOENT;
+			goto finish;
+		}
+	}
+	if (fatx_findDirectoryEntry(fatx, basename, folder) != NULL) {
+		// See if the file already exists.
 		err = -ENOENT;
 		goto finish;
 	}
+	newFile = fatx_getFirstOpenDirectoryEntry(fatx, folder);
+	newFileCluster = fatx_findFreeCluster(fatx, SWAP32(folder->firstCluster));
+	memset(newFile, 0, sizeof(fatx_directory_entry));
+	newFile->filenameSz = strlen(basename->filename);
+	memcpy(newFile->filename, basename->filename, 42);
+	newFile->firstCluster = SWAP32(newFileCluster);
+	fatx_writeFatEntry(fatx, newFileCluster, 
+	                   fatx->fatType == FATX32 ? SWAP32(0xFFFFFFF8) : SWAP16(0xFFF8));
 finish:
 	FATX_UNLOCK(fatx);
 	fatx_freeFilenameList(splitPath);
