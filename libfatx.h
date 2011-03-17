@@ -25,14 +25,14 @@ typedef struct fatx_dirent {
 
 /** Structure to store mount options */
 typedef struct fatx_options {
-	/** User to own the files */
-	uid_t    user;
-	/** Group of the files */
-	gid_t    group;
-	/** File permissions */
-	uint32_t filePerm;
-	/** Mount mode */
-	uint32_t mode;
+   /** User to own the files */
+   uid_t    user;
+   /** Group of the files */
+   gid_t    group;
+   /** File permissions */
+   uint32_t filePerm;
+   /** Mount mode */
+   uint32_t mode;
 } fatx_options_t;
 
 /**

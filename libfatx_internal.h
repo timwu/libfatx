@@ -26,9 +26,9 @@
 
 /** Types of FATX's */
 enum FAT_TYPE {
-	/** FATX 16, entries are 16 bits */
+   /** FATX 16, entries are 16 bits */
    FATX16 = 1,
-	/** FATX32, entries are 32 bits */
+   /** FATX32, entries are 32 bits */
    FATX32  
 };
 
@@ -65,113 +65,113 @@ enum FAT_TYPE {
 
 /** FATX directory entry */
 typedef struct fatx_directory_entry {
-	/** Length of the file name */
-	uint8_t					filenameSz;
-	/** FAT Attributes */
-	uint8_t					attributes;
-	/** Filename */
-	char                 filename[42];
-	/** First cluster of the file */
-	uint32_t					firstCluster;
-	/** File size */
-	uint32_t					fileSize;
-	/** Modification date */
-	uint16_t					modificationDate;
-	/** Modification time */
-	uint16_t					modificationTime;
-	/** Creation date */
-	uint16_t					creationDate;
-	/** Creation time */
-	uint16_t					creationTime;
-	/** Last access date */
-	uint16_t					accessDate;
-	/** Last access time */
-	uint16_t					accessTime;
+   /** Length of the file name */
+   uint8_t              filenameSz;
+   /** FAT Attributes */
+   uint8_t              attributes;
+   /** Filename */
+   char                 filename[42];
+   /** First cluster of the file */
+   uint32_t             firstCluster;
+   /** File size */
+   uint32_t             fileSize;
+   /** Modification date */
+   uint16_t             modificationDate;
+   /** Modification time */
+   uint16_t             modificationTime;
+   /** Creation date */
+   uint16_t             creationDate;
+   /** Creation time */
+   uint16_t             creationTime;
+   /** Last access date */
+   uint16_t             accessDate;
+   /** Last access time */
+   uint16_t             accessTime;
 } fatx_directory_entry;
 
 /** FAT page cache */
 typedef struct fatx_fat_cache_entry {
-	/** The FAT page number */
-	uint32_t pageNo;
-	/** Whether this fat page has been written to. */
-	char     dirty;
-	/** Number of free clusters in this FAT page. */
-	uint16_t noFreeCluster;
-	/** First free cluster number */
-	uint16_t firstFreeCluster;
-	/** The actual FAT entries */
-	union {
-		char     data[FAT_PAGE_SZ];
-		uint32_t fatx32Entries[FATX32_ENTRIES_PER_PAGE];
-		uint16_t fatx16Entries[FATX16_ENTRIES_PER_PAGE];
-	};
+   /** The FAT page number */
+   uint32_t pageNo;
+   /** Whether this fat page has been written to. */
+   char     dirty;
+   /** Number of free clusters in this FAT page. */
+   uint16_t noFreeCluster;
+   /** First free cluster number */
+   uint16_t firstFreeCluster;
+   /** The actual FAT entries */
+   union {
+      char     data[FAT_PAGE_SZ];
+      uint32_t fatx32Entries[FATX32_ENTRIES_PER_PAGE];
+      uint16_t fatx16Entries[FATX16_ENTRIES_PER_PAGE];
+   };
 } fatx_fat_cache_entry;
 
 /** Internal cache entry structure */
 typedef struct fatx_cache_entry {
-	/** The cluster number of this entry */
-	uint32_t			clusterNo;
-	/** Dirty flag */
-	char				dirty;
-	union {
-		/** Field to access the directory entries in the cluster with */
-		fatx_directory_entry dirEntries[DIR_ENTRIES_PER_CLUSTER];
-		/** Pointer to the actual data */
-		char 				      data[FAT_CLUSTER_SZ];
-	};
+   /** The cluster number of this entry */
+   uint32_t       clusterNo;
+   /** Dirty flag */
+   char           dirty;
+   union {
+      /** Field to access the directory entries in the cluster with */
+      fatx_directory_entry dirEntries[DIR_ENTRIES_PER_CLUSTER];
+      /** Pointer to the actual data */
+      char                 data[FAT_CLUSTER_SZ];
+   };
 } fatx_cache_entry;
 
 /** Internal fatx structure */
 typedef struct fatx_handle {
-	/** Mount options */
-	fatx_options_t         options;
+   /** Mount options */
+   fatx_options_t         options;
    /** File descriptor of the device */
-   int             		  dev; 
-	/** Mutex attributes */
-	pthread_mutexattr_t    mutexAttr;
+   int                    dev; 
+   /** Mutex attributes */
+   pthread_mutexattr_t    mutexAttr;
    /** Lock to synchronize access to the device */
-   pthread_mutex_t 		  devLock; 
+   pthread_mutex_t        devLock; 
    /** Number of clusters in the partition */
-   uint32_t        		  nClusters; 
-	/** Number of fat pages */
-	uint32_t               noFatPages;
+   uint32_t               nClusters; 
+   /** Number of fat pages */
+   uint32_t               noFatPages;
    /** FAT type, either fat16 or fat32 */
-   enum FAT_TYPE  	 	  fatType; 
-	/** Offset to the start of the data. */
-	off_t				 		  dataStart;
-	/** Root directory entry */
-	fatx_directory_entry   rootDirEntry;
-	/** Cache table */
-	fatx_cache_entry 	     cache[CACHE_SIZE];
-	/** FAT cache */
-	fatx_fat_cache_entry   fatCache[FAT_CACHE_SIZE];
+   enum FAT_TYPE          fatType; 
+   /** Offset to the start of the data. */
+   off_t                  dataStart;
+   /** Root directory entry */
+   fatx_directory_entry   rootDirEntry;
+   /** Cache table */
+   fatx_cache_entry       cache[CACHE_SIZE];
+   /** FAT cache */
+   fatx_fat_cache_entry   fatCache[FAT_CACHE_SIZE];
 } fatx_handle;
 
 /** Filename linked list */
 typedef struct fatx_filename_list {
-	/** Filename. Limited to 42 characters. */
-	char					          filename[43];
-	struct fatx_filename_list * next;
+   /** Filename. Limited to 42 characters. */
+   char                        filename[43];
+   struct fatx_filename_list * next;
 } fatx_filename_list;
 
 /** fatx_dirent_t linked list */
 typedef struct fatx_dirent_list {
-	/** This directory entry. */
-	fatx_dirent_t *           dirEnt;
-	/** Next dirent in the chain */
-	struct fatx_dirent_list * next;
+   /** This directory entry. */
+   fatx_dirent_t *           dirEnt;
+   /** Next dirent in the chain */
+   struct fatx_dirent_list * next;
 } fatx_dirent_list;
 
 /** Directory iterator */
 typedef struct fatx_dir_iter {
-	/** Reference to the fatx object this dir iter is associated with */
-	fatx_handle * 			fatx_h;
-	/** Cluster number in the folder */
-	uint32_t				   clusterNo;
-	/** Entry number */
-	uint32_t				   entryNo;
-	/** List of dirents given out */
-	fatx_dirent_list *   dirEntList;
+   /** Reference to the fatx object this dir iter is associated with */
+   fatx_handle *        fatx_h;
+   /** Cluster number in the folder */
+   uint32_t             clusterNo;
+   /** Entry number */
+   uint32_t             entryNo;
+   /** List of dirents given out */
+   fatx_dirent_list *   dirEntList;
 } fatx_dir_iter;
 
 /** Check if a directory entry is a folder */
@@ -335,7 +335,7 @@ fatx_filename_list * fatx_dirname(fatx_filename_list * fnList);
  * \return the dir iterator.
  */
 fatx_dir_iter * fatx_createDirIter(fatx_handle *          fatx_h, 
-											  fatx_directory_entry * directoryEntry);
+                                   fatx_directory_entry * directoryEntry);
 
 /**
  * Read a directory entry from an iterator
@@ -345,7 +345,7 @@ fatx_dir_iter * fatx_createDirIter(fatx_handle *          fatx_h,
  * \return directory entry; NULL if no entries left.
  */
 fatx_directory_entry * fatx_readDirectoryEntry(fatx_handle * fatx_h,
-															  fatx_dir_iter * iter);
+                                               fatx_dir_iter * iter);
 
 /**
  * Find a directory entry
@@ -356,8 +356,8 @@ fatx_directory_entry * fatx_readDirectoryEntry(fatx_handle * fatx_h,
  * \return the requested directory entry or NULL if not found.
  */
 fatx_directory_entry * fatx_findDirectoryEntry(fatx_handle *          fatx_h,
-															  fatx_filename_list *   fnList,
-															  fatx_directory_entry * baseDirectoryEntry);
+                                               fatx_filename_list *   fnList,
+                                               fatx_directory_entry * baseDirectoryEntry);
 /**
  * Make a time_t based on the time and date values from FATX
  *
@@ -379,7 +379,7 @@ time_t fatx_makeTimeType(uint16_t date, uint16_t time);
  */
 int fatx_readFromDirectoryEntry(fatx_handle * fatx_h, 
                                 fatx_directory_entry * directoryEntry,
-										  char * buf, off_t offset, size_t len);
+                                char * buf, off_t offset, size_t len);
 
 /**
  * Write to a directory entry, increasing the size if necessary.
@@ -393,7 +393,7 @@ int fatx_readFromDirectoryEntry(fatx_handle * fatx_h,
  */
 int fatx_writeToDirectoryEntry(fatx_handle * fatx_h, 
                                fatx_directory_entry * directoryEntry,
-										 char * buf, off_t offset, size_t len);
+                               char * buf, off_t offset, size_t len);
 
 /**
  * Initialize a cluster as an empty directory.
@@ -411,7 +411,7 @@ void fatx_initDirCluster(fatx_handle * fatx_h, uint32_t clusterNo);
  * \return reference to the first empty directory entry.
  */
 fatx_directory_entry * fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h,
-																		 fatx_directory_entry * folder);
+                                                       fatx_directory_entry * folder);
 
 /**
  * Make a file in the given directory
@@ -422,6 +422,6 @@ fatx_directory_entry * fatx_getFirstOpenDirectoryEntry(fatx_handle * fatx_h,
  * \return error code.
  */
 int fatx_mkFileInDirectory(fatx_handle * fatx_h, fatx_directory_entry * directoryEntry,
-									fatx_filename_list * filename);
+                           fatx_filename_list * filename);
 
 #endif // __LIBFATX_INTERNAL_H__
